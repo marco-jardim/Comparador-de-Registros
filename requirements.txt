@@ -1,0 +1,4 @@
+pandas>=2.0
+jellyfish>=1.0      # soundex
+python-Levenshtein  # distância de Levenshtein em C
+unidecode           # remoção de acentos
