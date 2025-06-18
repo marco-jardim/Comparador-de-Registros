@@ -1,0 +1,2 @@
+# Comparador de Registros
+
