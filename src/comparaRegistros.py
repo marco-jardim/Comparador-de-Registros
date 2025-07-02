@@ -253,9 +253,10 @@ def _criterios_str(v1: str, v2: str, freq: dict[str, int]) -> list[str]:
     pontos[4] = DFMT(incr).replace(".", ",")
 
     parecidos = 0
+    soundex_parts2 = {p2: util.soundex(p2) for p2 in parts2}  # Precompute soundex for parts2
     for p1 in parts1:
         s1 = util.soundex(p1)
-        if any(sum(c1 == c2 for c1, c2 in zip(s1, util.soundex(p2))) >= 3 for p2 in parts2):
+        if any(sum(c1 == c2 for c1, c2 in zip(s1, soundex_parts2[p2])) >= 3 for p2 in parts2):
             parecidos += 1
     incr = (parecidos / t1) * 0.8
     nota += incr
