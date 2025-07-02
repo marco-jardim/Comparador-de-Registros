@@ -250,9 +250,9 @@ class App(tk.Tk):
 
                 # arquivo entrada / saída
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
-        self.e_in = ttk.Entry(self, width=55)
-        self.e_in.place(x=150, y=247)
-        btn_open = ttk.Button(self, text="Procurar", command=self._abrir_csv)
+        self.e_in = ttk.Entry(self, width=30)
+        self.e_in.place(x=200, y=247)
+        btn_open = ttk.Button(self, text="Abrir", command=self._abrir_csv)
         btn_open.place(x=650, y=243)
         ToolTip(btn_open, "Ctrl+O")
 
@@ -262,12 +262,12 @@ class App(tk.Tk):
         self.e_out.place(x=200, y=277)
 
         # Amostra
-        ttk.Label(self, text="Tam. amostra:").place(x=10, y=325)
+        ttk.Label(self, text="Tamanho da amostra:").place(x=10, y=325)
         self.e_size = ttk.Entry(self, width=8)
         self.e_size.insert(0, "100")
-        self.e_size.place(x=100, y=325)
+        self.e_size.place(x=200, y=325)
         btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
-        btn_sample.place(x=180, y=322)
+        btn_sample.place(x=290, y=322)
         ToolTip(btn_sample, "Ctrl+G")
 
         # Botões principais
