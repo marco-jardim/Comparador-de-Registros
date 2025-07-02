@@ -2,69 +2,15 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
-import threading, queue, time, os, random
-from datetime import datetime, timedelta
+import threading, queue, time, os
 import pandas as pd
 
 import comparaRegistros as cr  # módulo já existente
+# ===================== utilidades de geração de dados sintéticos =================
+# Funções de geração em gerador_amostra.py
 
-# ===================== utilidades de geração de dados sintéticos =====================
-random.seed(42)
-MALE_FIRST = [
-    "João", "Pedro", "Lucas", "Gabriel", "Marcos", "Felipe", "Rafael", "Carlos", "Bruno", "Ricardo",
-    "Alex", "Thiago", "Daniel", "Gustavo", "Leonardo", "Matheus", "André", "Diego", "Eduardo", "Henrique",
-]
-FEMALE_FIRST = [
-    "Maria", "Ana", "Beatriz", "Larissa", "Juliana", "Camila", "Patrícia", "Aline", "Fernanda", "Vanessa",
-    "Luana", "Carolina", "Helena", "Isabela", "Eduarda", "Gabriela", "Bianca", "Patrícia", "Renata", "Tatiana",
-]
-LAST_NAMES = [
-    "Silva", "Souza", "Oliveira", "Santos", "Pereira", "Lima", "Costa", "Gomes", "Ribeiro", "Almeida",
-    "Nunes", "Carvalho", "Araujo", "Rodrigues", "Barbosa", "Moura", "Ferreira", "Medeiros", "Martins", "Duarte",
-]
-TYPO_FUNCS = [
-    lambda s: s[:-1] if len(s) > 3 else s,
-    lambda s: s + s[-1] if len(s) > 3 else s,
-    lambda s: s.replace("a", "á", 1) if "a" in s else s,
-    lambda s: s.replace("e", "3", 1) if "e" in s else s,
-    lambda s: s[1:] + s[0] if len(s) > 3 else s,
-]
+from gerador_amostra import generate_sample
 
-
-def _random_name(gender: str = "any") -> str:
-    pool = FEMALE_FIRST + MALE_FIRST if gender == "any" else (
-        FEMALE_FIRST if gender == "female" else MALE_FIRST)
-    return f"{random.choice(pool)} {random.choice(LAST_NAMES)}"
-
-
-def _random_date(start_year: int = 1980, end_year: int = 2010) -> str:
-    start = datetime(start_year, 1, 1)
-    end = datetime(end_year, 12, 31)
-    return (start + timedelta(days=random.randint(0, (end - start).days))).strftime("%Y%m%d")
-
-
-def _maybe_typo(name: str, prob: float = 0.15) -> str:
-    if random.random() < prob:
-        func = random.choice(TYPO_FUNCS)
-        return " ".join(func(p) if random.random() < 0.5 else p for p in name.split())
-    return name
-
-
-def generate_sample(n: int, out_path: Path, progress_cb=None) -> None:
-    cols = [chr(ord('A') + i) for i in range(16)]  # A‑P
-    rows = []
-    for i in range(n):
-        r = {c: "" for c in cols}
-        r['J'] = _maybe_typo(_random_name())
-        r['N'] = _maybe_typo(_random_name())
-        r['K'] = _maybe_typo(_random_name("female"))
-        r['O'] = _maybe_typo(_random_name("female"))
-        r['L'] = _random_date()
-        r['P'] = _random_date()
-        rows.append(r)
-        if progress_cb and (i + 1) % max(1, n // 100) == 0:
-            progress_cb(int((i + 1) / n * 100))
-    pd.DataFrame(rows, columns=cols).to_csv(out_path, sep=';', index=False)
 
 # ============================ Barra de progresso modal ===============================
 class ProgressDialog(tk.Toplevel):
