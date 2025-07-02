@@ -11,6 +11,9 @@ import comparaRegistros as cr  # módulo já existente
 
 from gerador_amostra import generate_sample
 
+# Emojis para tipos de variáveis
+EMOJIS = {"C": "🔤", "D": "📅", "N": "🔢"}
+
 
 # ============================ Barra de progresso modal ===============================
 class ProgressDialog(tk.Toplevel):
@@ -92,8 +95,9 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Comparação de Registros")
-        self.geometry("840x440")
+        self.geometry("860x460")
         self.resizable(False, False)
+        ttk.Style().theme_use("clam")
         self.filepath: str = ""
         self.output_csv: str = ""
         self.n_vars = simpledialog.askinteger(
@@ -101,7 +105,24 @@ class App(tk.Tk):
         ) or 1
         self.left_map: dict[str, tuple[int, str]] = {}
         self.right_map: dict[str, tuple[int, str]] = {}
+        self.left_labels: dict[str, str] = {}
+        self.right_labels: dict[str, str] = {}
+        self.label_to_left: dict[str, str] = {}
+        self.label_to_right: dict[str, str] = {}
         self._build()
+
+    def _build_fields(self):
+        ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
+        ttk.Label(self.frm_campos, text="Comparação").grid(row=0, column=2, padx=5)
+        self.boxes = []
+        for i in range(self.n_vars):
+            ttk.Label(self.frm_campos, text=f"Variável {i+1}:").grid(row=i+1, column=0, sticky="w")
+            cb1 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+            cb2 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+            cb1.grid(row=i+1, column=1, padx=5, pady=2)
+            cb2.grid(row=i+1, column=2, padx=5, pady=2)
+            cb1.bind("<<ComboboxSelected>>", lambda e, a=cb1, b=cb2: self._sync_pair(a, b))
+            self.boxes.append((cb1, cb2))
 
     def _load_header(self):
         if not self.filepath:
@@ -113,6 +134,10 @@ class App(tk.Tk):
             return
         self.left_map.clear()
         self.right_map.clear()
+        self.left_labels.clear()
+        self.right_labels.clear()
+        self.label_to_left.clear()
+        self.label_to_right.clear()
         left_names: list[str] = []
         right_names: list[str] = []
         for idx, col in enumerate(df.columns):
@@ -123,12 +148,17 @@ class App(tk.Tk):
                 prefix, nome = base.split('_', 1)
             else:
                 prefix, nome = base[0], base[1:]
+            label = f"{EMOJIS.get(tipo.upper(), '')} {nome}"
             if prefix == 'R':
                 self.left_map[nome] = (idx, tipo)
-                left_names.append(nome)
+                self.left_labels[nome] = label
+                self.label_to_left[label] = nome
+                left_names.append(label)
             elif prefix == 'C':
                 self.right_map[nome] = (idx, tipo)
-                right_names.append(nome)
+                self.right_labels[nome] = label
+                self.label_to_right[label] = nome
+                right_names.append(label)
         for cb1, cb2 in self.boxes:
             cb1['values'] = left_names
             cb2['values'] = right_names
@@ -136,6 +166,11 @@ class App(tk.Tk):
                 cb1.current(0)
             if right_names:
                 cb2.current(0)
+
+    def _sync_pair(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
+        nome = self.label_to_left.get(cb_left.get(), cb_left.get())
+        if nome in self.right_labels:
+            cb_right.set(self.right_labels[nome])
 
     # -------- build interface --------
     def _build(self):
@@ -147,16 +182,7 @@ class App(tk.Tk):
 
         self.frm_campos = ttk.Frame(self)
         self.frm_campos.place(x=10, y=30)
-        ttk.Label(self.frm_campos, text="Registro 1").grid(row=0, column=1, padx=5)
-        ttk.Label(self.frm_campos, text="Registro 2").grid(row=0, column=2, padx=5)
-        self.boxes = []
-        for i in range(self.n_vars):
-            ttk.Label(self.frm_campos, text=f"Variável {i+1}:").grid(row=i+1, column=0, sticky="w")
-            cb1 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
-            cb2 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
-            cb1.grid(row=i+1, column=1, padx=5, pady=2)
-            cb2.grid(row=i+1, column=2, padx=5, pady=2)
-            self.boxes.append((cb1, cb2))
+        self._build_fields()
 
                 # arquivo entrada / saída
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=230)
@@ -179,6 +205,16 @@ class App(tk.Tk):
         # Botões principais
         ttk.Button(self, text="Comparar", command=self._comparar).place(x=650, y=252)
         ttk.Button(self, text="Estatísticas", command=self._mostrar_stats).place(x=650, y=281)
+        ttk.Button(self, text="Reiniciar", command=self._reset_vars).place(x=650, y=310)
+        ttk.Button(self, text="Ajuda", command=self._show_help).place(x=650, y=339)
+
+        # Atalhos de teclado
+        self.bind("<Control-o>", lambda e: self._abrir_csv())
+        self.bind("<Control-g>", lambda e: self._gera_amostra())
+        self.bind("<Control-c>", lambda e: self._comparar())
+        self.bind("<Control-e>", lambda e: self._mostrar_stats())
+        self.bind("<F1>", lambda e: self._show_help())
+        self.bind("<F5>", lambda e: self._reset_vars())
 
     # ---------------- callbacks ----------------
     def _abrir_csv(self):
@@ -188,6 +224,31 @@ class App(tk.Tk):
             self.e_in.delete(0, tk.END)
             self.e_in.insert(0, Path(path).name)
             self._load_header()
+
+    def _reset_vars(self):
+        self.n_vars = simpledialog.askinteger(
+            "Variáveis", "Quantas variáveis deseja comparar?", minvalue=1, parent=self
+        ) or 1
+        for widget in self.frm_campos.winfo_children():
+            widget.destroy()
+        self.boxes.clear()
+        self._build_fields()
+        self._load_header()
+
+    def _show_help(self):
+        help_win = tk.Toplevel(self)
+        help_win.title("Ajuda")
+        help_win.geometry("500x300")
+        ttk.Label(
+            help_win,
+            text=(
+                "1. Abra ou gere um CSV.\n"
+                "2. Escolha as colunas de referência e comparação.\n"
+                "3. Clique em Comparar para gerar o resultado."
+            ),
+            justify="left",
+            padding=10,
+        ).pack(fill="both", expand=True)
 
     def _gera_amostra(self):
         try:
@@ -225,8 +286,10 @@ class App(tk.Tk):
             return
         pares = []
         for cb1, cb2 in self.boxes:
-            c1 = cb1.get()
-            c2 = cb2.get()
+            c1_label = cb1.get()
+            c2_label = cb2.get()
+            c1 = self.label_to_left.get(c1_label, c1_label)
+            c2 = self.label_to_right.get(c2_label, c2_label)
             if c1 not in self.left_map or c2 not in self.right_map:
                 messagebox.showerror("Erro", "Seleção inválida de colunas.")
                 return
