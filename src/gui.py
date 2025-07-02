@@ -126,17 +126,13 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Comparação de Registros")
-        self.geometry("860x460")
+        self.geometry("900x520")
         self.resizable(False, False)
-        ttk.Style().theme_use("clam")
 
-        fonts = tkfont.families()
-        self.font_family = (
-            "Segoe UI Emoji"
-            if "Segoe UI Emoji" in fonts
-            else ("Noto Color Emoji" if "Noto Color Emoji" in fonts else "Segoe UI")
-        )
-        base_size = 15
+        default_font = tkfont.nametofont("TkDefaultFont")
+        self.font_family = default_font.actual("family")
+        base_size = int(default_font.cget("size") * 1.5)
+        default_font.configure(size=base_size)
         ttk.Style().configure(".", font=(self.font_family, base_size))
         self.option_add("*Font", (self.font_family, base_size))
 
@@ -175,6 +171,7 @@ class App(tk.Tk):
         widgets = {"lbl": lbl, "cb1": cb1, "cb2": cb2, "btn": btn}
         btn.config(command=lambda w=widgets: self._del_field(w))
         self.boxes.append(widgets)
+        self._load_header()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
@@ -223,15 +220,16 @@ class App(tk.Tk):
                 self.right_labels[nome] = label
                 self.label_to_right[label] = nome
                 right_names.append(label)
-        for widgets in self.boxes:
+        old_selections = [
+            (w["cb1"].get(), w["cb2"].get()) for w in self.boxes
+        ]
+        for widgets, (old_l, old_r) in zip(self.boxes, old_selections):
             cb1 = widgets["cb1"]
             cb2 = widgets["cb2"]
             cb1['values'] = left_names
             cb2['values'] = right_names
-            if left_names:
-                cb1.current(0)
-            if right_names:
-                cb2.current(0)
+            cb1.set(old_l if old_l in left_names else "")
+            cb2.set(old_r if old_r in right_names else "")
 
     def _sync_pair(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
         nome = self.label_to_left.get(cb_left.get(), cb_left.get())
@@ -251,39 +249,39 @@ class App(tk.Tk):
         self._build_fields()
 
                 # arquivo entrada / saída
-        ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=230)
+        ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
         self.e_in = ttk.Entry(self, width=55)
-        self.e_in.place(x=150, y=227)
+        self.e_in.place(x=150, y=247)
         btn_open = ttk.Button(self, text="Procurar", command=self._abrir_csv)
-        btn_open.place(x=650, y=223)
+        btn_open.place(x=650, y=243)
         ToolTip(btn_open, "Ctrl+O")
 
-        ttk.Label(self, text="Arquivo de saída (base):").place(x=10, y=260)
+        ttk.Label(self, text="Arquivo de saída (base):").place(x=10, y=280)
         self.e_out = ttk.Entry(self, width=30)
         self.e_out.insert(0, "saida")
-        self.e_out.place(x=200, y=257)
+        self.e_out.place(x=200, y=277)
 
         # Amostra
-        ttk.Label(self, text="Tam. amostra:").place(x=10, y=300)
+        ttk.Label(self, text="Tam. amostra:").place(x=10, y=325)
         self.e_size = ttk.Entry(self, width=8)
         self.e_size.insert(0, "100")
-        self.e_size.place(x=100, y=300)
+        self.e_size.place(x=100, y=325)
         btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
-        btn_sample.place(x=180, y=297)
+        btn_sample.place(x=180, y=322)
         ToolTip(btn_sample, "Ctrl+G")
 
         # Botões principais
         btn_comp = ttk.Button(self, text="Comparar", command=self._comparar)
-        btn_comp.place(x=650, y=252)
+        btn_comp.place(x=650, y=272)
         ToolTip(btn_comp, "Ctrl+C")
         btn_stats = ttk.Button(self, text="Estatísticas", command=self._mostrar_stats)
-        btn_stats.place(x=650, y=281)
+        btn_stats.place(x=650, y=301)
         ToolTip(btn_stats, "Ctrl+E")
         btn_reset = ttk.Button(self, text="Reiniciar", command=self._reset_vars)
-        btn_reset.place(x=650, y=310)
+        btn_reset.place(x=650, y=330)
         ToolTip(btn_reset, "F5")
         btn_help = ttk.Button(self, text="Ajuda", command=self._show_help)
-        btn_help.place(x=650, y=339)
+        btn_help.place(x=650, y=359)
         ToolTip(btn_help, "F1")
 
         # Atalhos de teclado
