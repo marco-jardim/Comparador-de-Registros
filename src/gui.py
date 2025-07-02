@@ -148,7 +148,8 @@ class App(tk.Tk):
                 prefix, nome = base.split('_', 1)
             else:
                 prefix, nome = base[0], base[1:]
-            label = f"{EMOJIS.get(tipo.upper(), '')} {nome}"
+            emoji = EMOJIS.get(tipo.upper(), '')
+            label = f"{emoji + ' ' if emoji else ''}{nome}"
             if prefix == 'R':
                 self.left_map[nome] = (idx, tipo)
                 self.left_labels[nome] = label
