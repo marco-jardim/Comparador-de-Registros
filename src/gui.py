@@ -1,6 +1,7 @@
 from __future__ import annotations
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+from tkinter import ttk, filedialog, messagebox
+import tkinter.font as tkfont
 from pathlib import Path
 import threading, queue, time, os
 import pandas as pd
@@ -15,6 +16,32 @@ from gerador_amostra import generate_sample
 EMOJIS = {"C": "🔤", "D": "📅", "N": "🔢"}
 
 
+class ToolTip:
+    def __init__(self, widget: tk.Widget, text: str):
+        self.widget = widget
+        self.text = text
+        self.tipwindow: tk.Toplevel | None = None
+        widget.bind("<Enter>", self.show)
+        widget.bind("<Leave>", self.hide)
+
+    def show(self, _=None):
+        if self.tipwindow or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 1
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.geometry(f"+{x}+{y}")
+        font_family = self.widget.winfo_toplevel().font_family
+        tk.Label(tw, text=self.text, background="#ffffe0", relief="solid", borderwidth=1,
+                 font=(font_family, 12)).pack()
+
+    def hide(self, _=None):
+        if self.tipwindow:
+            self.tipwindow.destroy()
+            self.tipwindow = None
+
+
 # ============================ Barra de progresso modal ===============================
 class ProgressDialog(tk.Toplevel):
     """Exibe progresso determinate ou indeterminate.
@@ -25,11 +52,15 @@ class ProgressDialog(tk.Toplevel):
         self.geometry("400x120")
         self.resizable(False, False)
         self.grab_set()
+        self.update_idletasks()
+        x = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_width()) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
         self.protocol("WM_DELETE_WINDOW", lambda: None)  # desabilita fechar
-        ttk.Label(self, text=title, font=("Segoe UI", 10, "bold")).pack(pady=10)
+        ttk.Label(self, text=title, font=(parent.font_family, 15, "bold")).pack(pady=10)
         self.pb = ttk.Progressbar(self, orient="horizontal", length=350, mode="determinate")
         self.pb.pack(pady=5)
-        self.lbl_info = ttk.Label(self, text="0%")
+        self.lbl_info = ttk.Label(self, text="0%", font=(parent.font_family, 15))
         self.lbl_info.pack()
         self.start_time = time.time()
         self.queue: queue.Queue[tuple[int, str]] = queue.Queue()
@@ -87,8 +118,8 @@ class StatsWindow(tk.Toplevel):
         frm = ttk.Frame(self, padding=20)
         frm.pack(expand=True, fill="both")
         for i, (k, v) in enumerate(stats.items()):
-            ttk.Label(frm, text=f"{k}:", font=("Segoe UI", 10, "bold")).grid(row=i, column=0, sticky="w", pady=3)
-            ttk.Label(frm, text=v, font=("Segoe UI", 10)).grid(row=i, column=1, sticky="w", pady=3)
+            ttk.Label(frm, text=f"{k}:", font=(parent.font_family, 15, "bold")).grid(row=i, column=0, sticky="w", pady=3)
+            ttk.Label(frm, text=v, font=(parent.font_family, 15)).grid(row=i, column=1, sticky="w", pady=3)
 
 # ============================ GUI principal ==========================================
 class App(tk.Tk):
@@ -98,31 +129,63 @@ class App(tk.Tk):
         self.geometry("860x460")
         self.resizable(False, False)
         ttk.Style().theme_use("clam")
+
+        fonts = tkfont.families()
+        self.font_family = (
+            "Segoe UI Emoji"
+            if "Segoe UI Emoji" in fonts
+            else ("Noto Color Emoji" if "Noto Color Emoji" in fonts else "Segoe UI")
+        )
+        base_size = 15
+        ttk.Style().configure(".", font=(self.font_family, base_size))
+        self.option_add("*Font", (self.font_family, base_size))
+
         self.filepath: str = ""
         self.output_csv: str = ""
-        self.n_vars = simpledialog.askinteger(
-            "Variáveis", "Quantas variáveis deseja comparar?", minvalue=1, parent=self
-        ) or 1
         self.left_map: dict[str, tuple[int, str]] = {}
         self.right_map: dict[str, tuple[int, str]] = {}
         self.left_labels: dict[str, str] = {}
         self.right_labels: dict[str, str] = {}
         self.label_to_left: dict[str, str] = {}
         self.label_to_right: dict[str, str] = {}
+        self.boxes: list[dict[str, any]] = []
         self._build()
 
     def _build_fields(self):
         ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
         ttk.Label(self.frm_campos, text="Comparação").grid(row=0, column=2, padx=5)
-        self.boxes = []
-        for i in range(self.n_vars):
-            ttk.Label(self.frm_campos, text=f"Variável {i+1}:").grid(row=i+1, column=0, sticky="w")
-            cb1 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
-            cb2 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
-            cb1.grid(row=i+1, column=1, padx=5, pady=2)
-            cb2.grid(row=i+1, column=2, padx=5, pady=2)
-            cb1.bind("<<ComboboxSelected>>", lambda e, a=cb1, b=cb2: self._sync_pair(a, b))
-            self.boxes.append((cb1, cb2))
+        btn_add = ttk.Button(self.frm_campos, text="➕", width=3, command=self._add_field)
+        btn_add.grid(row=0, column=3)
+        ToolTip(btn_add, "Adicionar")
+        self.boxes.clear()
+        self._add_field()
+
+    def _add_field(self):
+        row = len(self.boxes) + 1
+        lbl = ttk.Label(self.frm_campos, text=f"Variável {row}:")
+        cb1 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+        cb2 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+        btn = ttk.Button(self.frm_campos, text="🗑", width=3)
+        lbl.grid(row=row, column=0, sticky="w")
+        cb1.grid(row=row, column=1, padx=5, pady=2)
+        cb2.grid(row=row, column=2, padx=5, pady=2)
+        btn.grid(row=row, column=3)
+        ToolTip(btn, "Remover")
+        cb1.bind("<<ComboboxSelected>>", lambda e, a=cb1, b=cb2: self._sync_pair(a, b))
+        widgets = {"lbl": lbl, "cb1": cb1, "cb2": cb2, "btn": btn}
+        btn.config(command=lambda w=widgets: self._del_field(w))
+        self.boxes.append(widgets)
+
+    def _del_field(self, widgets):
+        widgets["lbl"].destroy()
+        widgets["cb1"].destroy()
+        widgets["cb2"].destroy()
+        widgets["btn"].destroy()
+        self.boxes.remove(widgets)
+        for i, w in enumerate(self.boxes, start=1):
+            w["lbl"].config(text=f"Variável {i}:")
+            for widget in w.values():
+                widget.grid_configure(row=i)
 
     def _load_header(self):
         if not self.filepath:
@@ -160,7 +223,9 @@ class App(tk.Tk):
                 self.right_labels[nome] = label
                 self.label_to_right[label] = nome
                 right_names.append(label)
-        for cb1, cb2 in self.boxes:
+        for widgets in self.boxes:
+            cb1 = widgets["cb1"]
+            cb2 = widgets["cb2"]
             cb1['values'] = left_names
             cb2['values'] = right_names
             if left_names:
@@ -178,7 +243,7 @@ class App(tk.Tk):
         ttk.Label(
             self,
             text="Selecione as colunas para comparação",
-            font=("Segoe UI", 10, "bold"),
+            font=(self.font_family, 15, "bold"),
         ).place(x=10, y=5)
 
         self.frm_campos = ttk.Frame(self)
@@ -189,7 +254,9 @@ class App(tk.Tk):
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=230)
         self.e_in = ttk.Entry(self, width=55)
         self.e_in.place(x=150, y=227)
-        ttk.Button(self, text="Procurar", command=self._abrir_csv).place(x=650, y=223)
+        btn_open = ttk.Button(self, text="Procurar", command=self._abrir_csv)
+        btn_open.place(x=650, y=223)
+        ToolTip(btn_open, "Ctrl+O")
 
         ttk.Label(self, text="Arquivo de saída (base):").place(x=10, y=260)
         self.e_out = ttk.Entry(self, width=30)
@@ -201,13 +268,23 @@ class App(tk.Tk):
         self.e_size = ttk.Entry(self, width=8)
         self.e_size.insert(0, "100")
         self.e_size.place(x=100, y=300)
-        ttk.Button(self, text="Gerar amostra", command=self._gera_amostra).place(x=180, y=297)
+        btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
+        btn_sample.place(x=180, y=297)
+        ToolTip(btn_sample, "Ctrl+G")
 
         # Botões principais
-        ttk.Button(self, text="Comparar", command=self._comparar).place(x=650, y=252)
-        ttk.Button(self, text="Estatísticas", command=self._mostrar_stats).place(x=650, y=281)
-        ttk.Button(self, text="Reiniciar", command=self._reset_vars).place(x=650, y=310)
-        ttk.Button(self, text="Ajuda", command=self._show_help).place(x=650, y=339)
+        btn_comp = ttk.Button(self, text="Comparar", command=self._comparar)
+        btn_comp.place(x=650, y=252)
+        ToolTip(btn_comp, "Ctrl+C")
+        btn_stats = ttk.Button(self, text="Estatísticas", command=self._mostrar_stats)
+        btn_stats.place(x=650, y=281)
+        ToolTip(btn_stats, "Ctrl+E")
+        btn_reset = ttk.Button(self, text="Reiniciar", command=self._reset_vars)
+        btn_reset.place(x=650, y=310)
+        ToolTip(btn_reset, "F5")
+        btn_help = ttk.Button(self, text="Ajuda", command=self._show_help)
+        btn_help.place(x=650, y=339)
+        ToolTip(btn_help, "F1")
 
         # Atalhos de teclado
         self.bind("<Control-o>", lambda e: self._abrir_csv())
@@ -227,9 +304,6 @@ class App(tk.Tk):
             self._load_header()
 
     def _reset_vars(self):
-        self.n_vars = simpledialog.askinteger(
-            "Variáveis", "Quantas variáveis deseja comparar?", minvalue=1, parent=self
-        ) or 1
         for widget in self.frm_campos.winfo_children():
             widget.destroy()
         self.boxes.clear()
@@ -245,7 +319,14 @@ class App(tk.Tk):
             text=(
                 "1. Abra ou gere um CSV.\n"
                 "2. Escolha as colunas de referência e comparação.\n"
-                "3. Clique em Comparar para gerar o resultado."
+                "3. Clique em Comparar para gerar o resultado.\n\n"
+                "Atalhos:\n"
+                "Ctrl+O – Abrir CSV\n"
+                "Ctrl+G – Gerar amostra\n"
+                "Ctrl+C – Comparar\n"
+                "Ctrl+E – Estatísticas\n"
+                "F5 – Reiniciar\n"
+                "F1 – Ajuda"
             ),
             justify="left",
             padding=10,
@@ -286,7 +367,9 @@ class App(tk.Tk):
             messagebox.showwarning("Atenção", "Informe um nome de saída.")
             return
         pares = []
-        for cb1, cb2 in self.boxes:
+        for widgets in self.boxes:
+            cb1 = widgets["cb1"]
+            cb2 = widgets["cb2"]
             c1_label = cb1.get()
             c2_label = cb2.get()
             c1 = self.label_to_left.get(c1_label, c1_label)
