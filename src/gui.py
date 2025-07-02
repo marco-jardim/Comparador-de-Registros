@@ -1,6 +1,6 @@
 from __future__ import annotations
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from pathlib import Path
 import threading, queue, time, os
 import pandas as pd
@@ -89,9 +89,6 @@ class StatsWindow(tk.Toplevel):
 
 # ============================ GUI principal ==========================================
 class App(tk.Tk):
-    _LETTERS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    _DEFAULT_IDX = [9, 10, 11, 13, 14, 15]
-
     def __init__(self):
         super().__init__()
         self.title("Comparação de Registros")
@@ -99,22 +96,67 @@ class App(tk.Tk):
         self.resizable(False, False)
         self.filepath: str = ""
         self.output_csv: str = ""
+        self.n_vars = simpledialog.askinteger(
+            "Variáveis", "Quantas variáveis deseja comparar?", minvalue=1, parent=self
+        ) or 1
+        self.left_map: dict[str, tuple[int, str]] = {}
+        self.right_map: dict[str, tuple[int, str]] = {}
         self._build()
+
+    def _load_header(self):
+        if not self.filepath:
+            return
+        try:
+            df = pd.read_csv(self.filepath, sep='|', nrows=0)
+        except Exception as exc:
+            messagebox.showerror('Erro', f'Falha ao ler CSV:\n{exc}')
+            return
+        self.left_map.clear()
+        self.right_map.clear()
+        left_names: list[str] = []
+        right_names: list[str] = []
+        for idx, col in enumerate(df.columns):
+            parts = col.split(',')
+            base = parts[0]
+            tipo = parts[1] if len(parts) > 1 else 'C'
+            if '_' in base:
+                prefix, nome = base.split('_', 1)
+            else:
+                prefix, nome = base[0], base[1:]
+            if prefix == 'R':
+                self.left_map[nome] = (idx, tipo)
+                left_names.append(nome)
+            elif prefix == 'C':
+                self.right_map[nome] = (idx, tipo)
+                right_names.append(nome)
+        for cb1, cb2 in self.boxes:
+            cb1['values'] = left_names
+            cb2['values'] = right_names
+            if left_names:
+                cb1.current(0)
+            if right_names:
+                cb2.current(0)
 
     # -------- build interface --------
     def _build(self):
-        ttk.Label(self, text="Indique as colunas referentes aos seguintes dados:", font=("Segoe UI", 10, "bold")).place(x=10, y=5)
-        campos = (
-            ("Nome 1", 30, 10), ("Nome Mãe 1", 86, 10), ("Nascimento 1", 142, 10),
-            ("Nome 2", 30, 370), ("Nome Mãe 2", 86, 370), ("Nascimento 2", 142, 370),
-        )
+        ttk.Label(
+            self,
+            text="Selecione as colunas para comparação",
+            font=("Segoe UI", 10, "bold"),
+        ).place(x=10, y=5)
+
+        self.frm_campos = ttk.Frame(self)
+        self.frm_campos.place(x=10, y=30)
+        ttk.Label(self.frm_campos, text="Registro 1").grid(row=0, column=1, padx=5)
+        ttk.Label(self.frm_campos, text="Registro 2").grid(row=0, column=2, padx=5)
         self.boxes = []
-        for i, (lbl, y, x) in enumerate(campos):
-            ttk.Label(self, text=lbl+":").place(x=x, y=y)
-            cb = ttk.Combobox(self, values=self._LETTERS, width=3, state="readonly")
-            cb.current(self._DEFAULT_IDX[i])
-            cb.place(x=x, y=y+25)
-            self.boxes.append(cb)
+        for i in range(self.n_vars):
+            ttk.Label(self.frm_campos, text=f"Variável {i+1}:").grid(row=i+1, column=0, sticky="w")
+            cb1 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+            cb2 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+            cb1.grid(row=i+1, column=1, padx=5, pady=2)
+            cb2.grid(row=i+1, column=2, padx=5, pady=2)
+            self.boxes.append((cb1, cb2))
 
                 # arquivo entrada / saída
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=230)
@@ -145,6 +187,7 @@ class App(tk.Tk):
             self.filepath = path
             self.e_in.delete(0, tk.END)
             self.e_in.insert(0, Path(path).name)
+            self._load_header()
 
     def _gera_amostra(self):
         try:
@@ -165,6 +208,7 @@ class App(tk.Tk):
                 self.filepath = dest
                 self.e_in.delete(0, tk.END)
                 self.e_in.insert(0, Path(dest).name)
+                self._load_header()
                 messagebox.showinfo("Ok", f"Amostra criada em {dest}")
             except Exception as e:
                 dlg.destroy()
@@ -179,12 +223,21 @@ class App(tk.Tk):
         if not out_base:
             messagebox.showwarning("Atenção", "Informe um nome de saída.")
             return
-        idxs = tuple(cb.current() for cb in self.boxes)
+        pares = []
+        for cb1, cb2 in self.boxes:
+            c1 = cb1.get()
+            c2 = cb2.get()
+            if c1 not in self.left_map or c2 not in self.right_map:
+                messagebox.showerror("Erro", "Seleção inválida de colunas.")
+                return
+            idx1, tipo = self.left_map[c1]
+            idx2, _ = self.right_map[c2]
+            pares.append((idx1, idx2, tipo, c1))
         dlg = ProgressDialog(self, "Comparando registros")
-        dlg.put(-1, "Processando…")  # modo indeterminate
+        dlg.put(-1, "Processando…")
         def worker():
             try:
-                cr.processar(self.filepath, out_base, idxs)
+                cr.processar_generico(self.filepath, out_base, pares)
                 self.output_csv = f"{out_base}.csv"
                 dlg.put(100, "Concluído")
                 messagebox.showinfo("Pronto", "Comparação concluída.")
