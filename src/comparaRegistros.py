@@ -206,3 +206,132 @@ def processar(arquivo_entrada: str,
     out_df.to_csv(f"{arquivo_saida}.csv", sep=";", index=False)
     # |‑separated
     out_df.to_csv(f"{arquivo_saida}2.csv", sep="|", index=False)
+
+
+def _build_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> dict[str, int]:
+    counter: dict[str, int] = {}
+    for val in pd.concat([df.iloc[:, idx1], df.iloc[:, idx2]]).astype(str):
+        parts = util.padroniza(val).split()
+        for p in parts:
+            counter[p] = counter.get(p, 0) + 1
+    return counter
+
+
+def _criterios_str(v1: str, v2: str, freq: dict[str, int]) -> list[str]:
+    """Avalia dois textos utilizando critérios similares aos de nome."""
+    pontos: list[str] = ["0,0"] * 7
+    nota = 0.0
+
+    parts1 = v1.split()
+    parts2 = v2.split()
+    if not parts1 or not parts2:
+        return pontos + ["0,0"]
+
+    t1 = len(parts1)
+
+    if parts1[0] == parts2[0]:
+        nota += 1
+        pontos[0] = "1,0"
+
+    if parts1[-1] == parts2[-1]:
+        nota += 1
+        pontos[1] = "1,0"
+
+    inter = sum(1 for f in parts1 if f in parts2)
+    incr = inter / t1
+    nota += incr
+    pontos[2] = DFMT(incr).replace(".", ",")
+
+    raros = sum(1 for p in parts1 if freq.get(p, 0) < 5)
+    incr = raros / t1
+    nota += incr
+    pontos[3] = DFMT(incr).replace(".", ",")
+
+    comuns = sum(1 for p in parts1 if freq.get(p, 0) > 1000)
+    incr = -(comuns / t1)
+    nota += incr
+    pontos[4] = DFMT(incr).replace(".", ",")
+
+    parecidos = 0
+    soundex_parts2 = {p2: util.soundex(p2) for p2 in parts2}  # Precompute soundex for parts2
+    for p1 in parts1:
+        s1 = util.soundex(p1)
+        if any(sum(c1 == c2 for c1, c2 in zip(s1, soundex_parts2[p2])) >= 3 for p2 in parts2):
+            parecidos += 1
+    incr = (parecidos / t1) * 0.8
+    nota += incr
+    pontos[5] = DFMT(incr).replace(".", ",")
+
+    abrevs = 0
+    for p1 in parts1:
+        if len(p1) == 1 and any(p2.startswith(p1) for p2 in parts2):
+            abrevs += 1
+    for p2 in parts2:
+        if len(p2) == 1 and any(p1.startswith(p2) for p1 in parts1):
+            abrevs += 1
+    incr = (abrevs / t1) * 0.5
+    nota += incr
+    pontos[6] = DFMT(incr).replace(".", ",")
+
+    return pontos + [DFMT(nota).replace(".", ",")]
+
+
+def processar_generico(
+    arquivo_entrada: str,
+    arquivo_saida: str,
+    pares: list[tuple[int, int, str, str]],
+) -> None:
+    """Processa genericamente pares de colunas.
+
+    ``pares`` contém ``(idx1, idx2, tipo, nome)`` onde ``tipo`` é ``"C"`` para
+    strings ou ``"D"`` para datas e ``nome`` é um rótulo para os campos.
+    """
+    df = pd.read_csv(arquivo_entrada, sep="|", dtype=str).fillna("")
+
+    freq_maps: dict[int, dict[str, int]] = {}
+    for i, (idx1, idx2, tipo, _) in enumerate(pares):
+        if tipo.upper() == "C":
+            freq_maps[i] = _build_freq_map(df, idx1, idx2)
+
+    linhas = []
+    for _, row in df.iterrows():
+        pontos_linha: list[str] = []
+        nota_total = 0.0
+        for i, (idx1, idx2, tipo, _) in enumerate(pares):
+            v1 = util.padroniza(str(row.iloc[idx1]))
+            v2 = util.padroniza(str(row.iloc[idx2]))
+            if tipo.upper() == "D":
+                p = _criterios_data(v1, v2)
+            else:
+                p = _criterios_str(v1, v2, freq_maps[i])
+            pontos_linha.extend(p[:-1])
+            nota_total += float(p[-1].replace(",", "."))
+        pontos_linha.append(DFMT(nota_total).replace(".", ","))
+        linhas.append(list(row) + pontos_linha)
+
+    header_criterios: list[str] = []
+    for _, _, tipo, nome in pares:
+        if tipo.upper() == "D":
+            header_criterios += [
+                f"{nome} dt iguais",
+                f"{nome} dt ap 1digi",
+                f"{nome} dt inv dia",
+                f"{nome} dt inv mes",
+                f"{nome} dt inv ano",
+            ]
+        else:
+            header_criterios += [
+                f"{nome} prim frag igual",
+                f"{nome} ult frag igual",
+                f"{nome} qtd frag iguais",
+                f"{nome} qtd frag raros",
+                f"{nome} qtd frag comuns",
+                f"{nome} qtd frag muito parec",
+                f"{nome} qtd frag abrev",
+            ]
+    header_criterios.append("nota final")
+
+    header = list(df.columns) + header_criterios
+    out_df = pd.DataFrame(linhas, columns=header)
+    out_df.to_csv(f"{arquivo_saida}.csv", sep=";", index=False)
+    out_df.to_csv(f"{arquivo_saida}2.csv", sep="|", index=False)
