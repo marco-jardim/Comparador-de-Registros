@@ -50,6 +50,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.merged == true
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+        # precisamos do histórico completo para as tags
+          fetch-depth: 0
+          
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
