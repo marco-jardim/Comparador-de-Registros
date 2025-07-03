@@ -1,5 +1,7 @@
 name: Build and Release
 
+permissions:
+  contents: write
 on:
   push:
     branches: [main]
@@ -46,6 +48,8 @@ jobs:
           path: Comparador-${{ runner.os }}*
 
   release:
+    permissions:
+      contents: write
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.merged == true
@@ -55,7 +59,7 @@ jobs:
         with:
         # precisamos do histórico completo para as tags
           fetch-depth: 0
-          
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
