@@ -108,9 +108,10 @@ jobs:
                   ]
                 }')"
           )
-          # extrai só a parte do texto
           notes=$(echo "$summary" | jq -r '.choices[0].message.content')
-          echo "release_notes<<EOF\n$notes\nEOF" >> $GITHUB_OUTPUT
+          # Aqui vem a alteração:
+          printf 'release_notes<<EOF\n%s\nEOF\n' "$notes" >> "$GITHUB_OUTPUT"
+
 
       - name: Create release
         uses: ncipollo/release-action@v1
