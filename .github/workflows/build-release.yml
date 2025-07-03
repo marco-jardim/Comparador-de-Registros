@@ -79,6 +79,30 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
+      - name: Extrair commits desde a última tag
+        id: commits
+        run: |
+          prev_tag=$(git tag -l 'v*' | sort -V | tail -n2 | head -n1)
+          git log "$prev_tag"..HEAD --pretty=format:"- %s" > changelog.md
+          # transforma quebras de linha em \n
+          logs=$(awk '{printf "%s\\n", $0}' changelog.md)
+          echo "logs=$logs" >> "$GITHUB_OUTPUT"
+
+      - name: Gerar release notes com OpenAI
+        id: ai_notes
+        uses: Just-Moh-it/openai@v0.0.1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-mode: "chat"
+          openai-params: >-
+            {
+              "model": "gpt-4o-mini",
+              "messages": [
+                {"role":"system","content":"Você é um gerador de changelog. Resuma as mudanças de forma clara e concisa."},
+                {"role":"user","content":"${{ steps.commits.outputs.logs }}"}
+              ]
+            }
+
       - name: Create release
         uses: ncipollo/release-action@v1
         with:
