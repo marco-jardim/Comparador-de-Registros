@@ -119,5 +119,4 @@ jobs:
           tag: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
           artifacts: artifacts/**
-          body: |
-            Release automatically generated for version v${{ steps.version.outputs.version }}.
+          body: ${{ steps.ai_notes_curl.outputs.release_notes }}
