@@ -40,7 +40,7 @@ jobs:
           mv dist/gui${EXT} Comparador-${RUNNER_OS}${EXT}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Comparador-${{ runner.os }}
           path: Comparador-${{ runner.os }}*
@@ -51,7 +51,7 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.merged == true
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
