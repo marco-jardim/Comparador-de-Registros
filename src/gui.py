@@ -138,6 +138,10 @@ class App(tk.Tk):
 
         self.filepath: str = ""
         self.output_csv: str = ""
+        self.format_var = tk.StringVar(value="OpenRecLink")
+        self.sep = "|"
+        self.sort_var = tk.StringVar(value="nota final")
+        self.order_var = tk.StringVar(value="decrescente")
         self.left_map: dict[str, tuple[int, str]] = {}
         self.right_map: dict[str, tuple[int, str]] = {}
         self.left_labels: dict[str, str] = {}
@@ -172,6 +176,7 @@ class App(tk.Tk):
         btn.config(command=lambda w=widgets: self._del_field(w))
         self.boxes.append(widgets)
         self._load_header()
+        self._reposition_widgets()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
@@ -183,12 +188,13 @@ class App(tk.Tk):
             w["lbl"].config(text=f"Variável {i}:")
             for widget in w.values():
                 widget.grid_configure(row=i)
+        self._reposition_widgets()
 
     def _load_header(self):
         if not self.filepath:
             return
         try:
-            df = pd.read_csv(self.filepath, sep='|', nrows=0)
+            df = pd.read_csv(self.filepath, sep=self.sep, nrows=0)
         except Exception as exc:
             messagebox.showerror('Erro', f'Falha ao ler CSV:\n{exc}')
             return
@@ -201,25 +207,37 @@ class App(tk.Tk):
         left_names: list[str] = []
         right_names: list[str] = []
         for idx, col in enumerate(df.columns):
-            parts = col.split(',')
-            base = parts[0]
-            tipo = parts[1] if len(parts) > 1 else 'C'
-            if '_' in base:
-                prefix, nome = base.split('_', 1)
+            if self.format_var.get() == "OpenRecLink":
+                parts = col.split(',')
+                base = parts[0]
+                tipo = parts[1] if len(parts) > 1 else 'C'
+                if '_' in base:
+                    prefix, nome = base.split('_', 1)
+                else:
+                    prefix, nome = base[0], base[1:]
+                emoji = EMOJIS.get(tipo.upper(), '')
+                label = f"{emoji + ' ' if emoji else ''}{nome}"
+                if prefix == 'R':
+                    self.left_map[nome] = (idx, tipo)
+                    self.left_labels[nome] = label
+                    self.label_to_left[label] = nome
+                    left_names.append(label)
+                elif prefix == 'C':
+                    self.right_map[nome] = (idx, tipo)
+                    self.right_labels[nome] = label
+                    self.label_to_right[label] = nome
+                    right_names.append(label)
             else:
-                prefix, nome = base[0], base[1:]
-            emoji = EMOJIS.get(tipo.upper(), '')
-            label = f"{emoji + ' ' if emoji else ''}{nome}"
-            if prefix == 'R':
+                nome = col
+                tipo = 'C'
                 self.left_map[nome] = (idx, tipo)
-                self.left_labels[nome] = label
-                self.label_to_left[label] = nome
-                left_names.append(label)
-            elif prefix == 'C':
                 self.right_map[nome] = (idx, tipo)
-                self.right_labels[nome] = label
-                self.label_to_right[label] = nome
-                right_names.append(label)
+                self.left_labels[nome] = nome
+                self.right_labels[nome] = nome
+                self.label_to_left[nome] = nome
+                self.label_to_right[nome] = nome
+                left_names.append(nome)
+                right_names.append(nome)
         old_selections = [
             (w["cb1"].get(), w["cb2"].get()) for w in self.boxes
         ]
@@ -230,6 +248,25 @@ class App(tk.Tk):
             cb2['values'] = right_names
             cb1.set(old_l if old_l in left_names else "")
             cb2.set(old_r if old_r in right_names else "")
+        sort_opts = ['<original>', 'nota final'] + list(df.columns)
+        self.cb_sort['values'] = sort_opts
+        if self.sort_var.get() not in sort_opts:
+            self.sort_var.set('nota final')
+
+    def _reposition_widgets(self):
+        extra = max(0, len(self.boxes) - 4) * 30
+        self.geometry(f"900x{520 + extra}")
+        mapping = [
+            (self.lbl_sort, 360),
+            (self.lbl_in, 250), (self.e_in, 247), (self.btn_open, 243),
+            (self.lbl_out, 280), (self.e_out, 277),
+            (self.lbl_size, 325), (self.e_size, 325), (self.btn_sample, 322),
+            (self.cb_sort, 357), (self.cb_order, 357),
+            (self.btn_comp, 272), (self.btn_stats, 301),
+            (self.btn_reset, 330), (self.btn_help, 359),
+        ]
+        for widget, base in mapping:
+            widget.place_configure(y=base + extra)
 
     def _sync_pair(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
         nome = self.label_to_left.get(cb_left.get(), cb_left.get())
@@ -243,46 +280,65 @@ class App(tk.Tk):
             text="Selecione as colunas para comparação",
             font=(self.font_family, 15, "bold"),
         ).place(x=10, y=5)
+        ttk.Label(self, text="Formato:").place(x=650, y=5)
+        fmt_cb = ttk.Combobox(self, textvariable=self.format_var,
+                              state="readonly", width=12,
+                              values=["OpenRecLink", "Geral"])
+        fmt_cb.place(x=720, y=5)
+        fmt_cb.bind("<<ComboboxSelected>>", lambda e: self._on_format_change())
+
+        self.lbl_sort = ttk.Label(self, text="Ordenar por:")
+        self.lbl_sort.place(x=10, y=360)
+        self.cb_sort = ttk.Combobox(self, textvariable=self.sort_var,
+                                    state="readonly", width=20)
+        self.cb_sort.place(x=200, y=357)
+        self.cb_order = ttk.Combobox(self, textvariable=self.order_var,
+                                     state="readonly", width=12,
+                                     values=["crescente", "decrescente"])
+        self.cb_order.place(x=430, y=357)
 
         self.frm_campos = ttk.Frame(self)
         self.frm_campos.place(x=10, y=30)
         self._build_fields()
 
                 # arquivo entrada / saída
-        ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
+        self.lbl_in = ttk.Label(self, text="Arquivo de entrada:")
+        self.lbl_in.place(x=10, y=250)
         self.e_in = ttk.Entry(self, width=30)
         self.e_in.place(x=200, y=247)
-        btn_open = ttk.Button(self, text="Abrir", command=self._abrir_csv)
-        btn_open.place(x=650, y=243)
-        ToolTip(btn_open, "Ctrl+O")
+        self.btn_open = ttk.Button(self, text="Abrir", command=self._abrir_csv)
+        self.btn_open.place(x=650, y=243)
+        ToolTip(self.btn_open, "Ctrl+O")
 
-        ttk.Label(self, text="Arquivo de saída (base):").place(x=10, y=280)
+        self.lbl_out = ttk.Label(self, text="Arquivo de saída (base):")
+        self.lbl_out.place(x=10, y=280)
         self.e_out = ttk.Entry(self, width=30)
         self.e_out.insert(0, "saida")
         self.e_out.place(x=200, y=277)
 
         # Amostra
-        ttk.Label(self, text="Tamanho da amostra:").place(x=10, y=325)
+        self.lbl_size = ttk.Label(self, text="Tamanho da amostra:")
+        self.lbl_size.place(x=10, y=325)
         self.e_size = ttk.Entry(self, width=8)
         self.e_size.insert(0, "100")
         self.e_size.place(x=200, y=325)
-        btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
-        btn_sample.place(x=290, y=322)
-        ToolTip(btn_sample, "Ctrl+G")
+        self.btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
+        self.btn_sample.place(x=290, y=322)
+        ToolTip(self.btn_sample, "Ctrl+G")
 
         # Botões principais
-        btn_comp = ttk.Button(self, text="Comparar", command=self._comparar)
-        btn_comp.place(x=650, y=272)
-        ToolTip(btn_comp, "Ctrl+C")
-        btn_stats = ttk.Button(self, text="Estatísticas", command=self._mostrar_stats)
-        btn_stats.place(x=650, y=301)
-        ToolTip(btn_stats, "Ctrl+E")
-        btn_reset = ttk.Button(self, text="Reiniciar", command=self._reset_vars)
-        btn_reset.place(x=650, y=330)
-        ToolTip(btn_reset, "F5")
-        btn_help = ttk.Button(self, text="Ajuda", command=self._show_help)
-        btn_help.place(x=650, y=359)
-        ToolTip(btn_help, "F1")
+        self.btn_comp = ttk.Button(self, text="Comparar", command=self._comparar)
+        self.btn_comp.place(x=650, y=272)
+        ToolTip(self.btn_comp, "Ctrl+C")
+        self.btn_stats = ttk.Button(self, text="Estatísticas", command=self._mostrar_stats)
+        self.btn_stats.place(x=650, y=301)
+        ToolTip(self.btn_stats, "Ctrl+E")
+        self.btn_reset = ttk.Button(self, text="Reiniciar", command=self._reset_vars)
+        self.btn_reset.place(x=650, y=330)
+        ToolTip(self.btn_reset, "F5")
+        self.btn_help = ttk.Button(self, text="Ajuda", command=self._show_help)
+        self.btn_help.place(x=650, y=359)
+        ToolTip(self.btn_help, "F1")
 
         # Atalhos de teclado
         self.bind("<Control-o>", lambda e: self._abrir_csv())
@@ -291,6 +347,7 @@ class App(tk.Tk):
         self.bind("<Control-e>", lambda e: self._mostrar_stats())
         self.bind("<F1>", lambda e: self._show_help())
         self.bind("<F5>", lambda e: self._reset_vars())
+        self._reposition_widgets()
 
     # ---------------- callbacks ----------------
     def _abrir_csv(self):
@@ -306,6 +363,12 @@ class App(tk.Tk):
             widget.destroy()
         self.boxes.clear()
         self._build_fields()
+        self._load_header()
+        self._reposition_widgets()
+
+    def _on_format_change(self):
+        fmt = self.format_var.get()
+        self.sep = '|' if fmt == 'OpenRecLink' else ','
         self._load_header()
 
     def _show_help(self):
@@ -344,7 +407,8 @@ class App(tk.Tk):
         dlg = ProgressDialog(self, "Gerando amostra")
         def worker():
             try:
-                generate_sample(n, Path(dest), progress_cb=lambda p: dlg.put(p))
+                generate_sample(n, Path(dest), sep=self.sep,
+                                progress_cb=lambda p: dlg.put(p))
                 dlg.put(100, "Concluído")
                 self.filepath = dest
                 self.e_in.delete(0, tk.END)
@@ -379,10 +443,19 @@ class App(tk.Tk):
             idx2, _ = self.right_map[c2]
             pares.append((idx1, idx2, tipo, c1))
         dlg = ProgressDialog(self, "Comparando registros")
-        dlg.put(-1, "Processando…")
+        dlg.put(0, "0/0")
         def worker():
             try:
-                cr.processar_generico(self.filepath, out_base, pares)
+                sort_col = self.cb_sort.get()
+                if sort_col == '<original>':
+                    sort_col = None
+                asc = self.order_var.get() == 'crescente'
+                cr.processar_generico(
+                    self.filepath, out_base, pares,
+                    sep=self.sep,
+                    sort_col=sort_col,
+                    ascending=asc,
+                    progress_cb=lambda p, m: dlg.put(p, m))
                 self.output_csv = f"{out_base}.csv"
                 dlg.put(100, "Concluído")
                 messagebox.showinfo("Pronto", "Comparação concluída.")

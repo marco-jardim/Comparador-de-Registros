@@ -3,6 +3,7 @@ import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Dict, List
+import time
 
 import util
 import transformaBase as tf
@@ -131,6 +132,10 @@ def _criterios_data(d1: str, d2: str) -> List[str]:
 def processar(arquivo_entrada: str,
               arquivo_saida : str,
               idxs           : tuple[int, int, int, int, int, int],
+              *,
+              sep: str = ";",
+              sort_col: str | None = "nota final",
+              ascending: bool = False,
               cache_dir      : str = ".freq_cache") -> None:
     Nome1, Mae1, Nasc1, Nome2, Mae2, Nasc2 = idxs
     freq_paths = (
@@ -143,7 +148,7 @@ def processar(arquivo_entrada: str,
     )
     freq_maps = fb.build_if_missing(arquivo_entrada, idxs, out_dir=cache_dir)
 
-    df = pd.read_csv(arquivo_entrada, sep=";", dtype=str).fillna("")
+    df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
     saida_cols: list[str] = []
 
     linhas_saida = []
@@ -201,11 +206,9 @@ def processar(arquivo_entrada: str,
     ]
     header = list(df.columns) + header_criterios
     out_df = pd.DataFrame(linhas_saida, columns=header)
-
-    # ;‑separated
-    out_df.to_csv(f"{arquivo_saida}.csv", sep=";", index=False)
-    # |‑separated
-    out_df.to_csv(f"{arquivo_saida}2.csv", sep="|", index=False)
+    if sort_col:
+        out_df.sort_values(sort_col, ascending=ascending, inplace=True, ignore_index=True)
+    out_df.to_csv(f"{arquivo_saida}.csv", sep=sep, index=False)
 
 
 def _build_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> dict[str, int]:
@@ -280,26 +283,33 @@ def processar_generico(
     arquivo_entrada: str,
     arquivo_saida: str,
     pares: list[tuple[int, int, str, str]],
+    *,
+    sep: str = "|",
+    sort_col: str | None = "nota final",
+    ascending: bool = False,
+    progress_cb=None,
 ) -> None:
     """Processa genericamente pares de colunas.
 
     ``pares`` contém ``(idx1, idx2, tipo, nome)`` onde ``tipo`` é ``"C"`` para
     strings ou ``"D"`` para datas e ``nome`` é um rótulo para os campos.
     """
-    df = pd.read_csv(arquivo_entrada, sep="|", dtype=str).fillna("")
+    df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
 
     freq_maps: dict[int, dict[str, int]] = {}
     for i, (idx1, idx2, tipo, _) in enumerate(pares):
         if tipo.upper() == "C":
             freq_maps[i] = _build_freq_map(df, idx1, idx2)
 
+    total = len(df)
     linhas = []
-    for _, row in df.iterrows():
+    start = time.time()
+    for line_no, row in enumerate(df.itertuples(index=False), start=1):
         pontos_linha: list[str] = []
         nota_total = 0.0
         for i, (idx1, idx2, tipo, _) in enumerate(pares):
-            v1 = util.padroniza(str(row.iloc[idx1]))
-            v2 = util.padroniza(str(row.iloc[idx2]))
+            v1 = util.padroniza(str(getattr(row, df.columns[idx1])))
+            v2 = util.padroniza(str(getattr(row, df.columns[idx2])))
             if tipo.upper() == "D":
                 p = _criterios_data(v1, v2)
             else:
@@ -308,6 +318,10 @@ def processar_generico(
             nota_total += float(p[-1].replace(",", "."))
         pontos_linha.append(DFMT(nota_total).replace(".", ","))
         linhas.append(list(row) + pontos_linha)
+        if progress_cb and (line_no == 1 or line_no % max(1, total // 100) == 0 or line_no == total):
+            pct = int(line_no / total * 100)
+            eta = (time.time() - start) / line_no * (total - line_no) if line_no else 0
+            progress_cb(pct, f"{line_no}/{total} • ETA {int(eta)}s")
 
     header_criterios: list[str] = []
     for _, _, tipo, nome in pares:
@@ -333,5 +347,6 @@ def processar_generico(
 
     header = list(df.columns) + header_criterios
     out_df = pd.DataFrame(linhas, columns=header)
-    out_df.to_csv(f"{arquivo_saida}.csv", sep=";", index=False)
-    out_df.to_csv(f"{arquivo_saida}2.csv", sep="|", index=False)
+    if sort_col:
+        out_df.sort_values(sort_col, ascending=ascending, inplace=True, ignore_index=True)
+    out_df.to_csv(f"{arquivo_saida}.csv", sep=sep, index=False)
