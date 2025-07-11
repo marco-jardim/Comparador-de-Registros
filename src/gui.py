@@ -81,8 +81,7 @@ class ProgressDialog(tk.Toplevel):
                         self.pb.stop()
                         self.pb.config(mode="determinate")
                     self.pb['value'] = pct
-                    eta = (time.time() - self.start_time) * (100 - pct) / pct if pct else 0
-                    self.lbl_info.config(text=f"{pct}%  • ETA {int(eta)}s  {msg}")
+                    self.lbl_info.config(text=f"{pct}%  {msg}")
                     if pct >= 100:
                         self.destroy()
                         return
@@ -176,7 +175,8 @@ class App(tk.Tk):
         btn.config(command=lambda w=widgets: self._del_field(w))
         self.boxes.append(widgets)
         self._load_header()
-        self._reposition_widgets()
+        if hasattr(self, 'lbl_in'):
+            self._reposition_widgets()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
