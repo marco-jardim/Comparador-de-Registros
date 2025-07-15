@@ -284,9 +284,9 @@ class App(tk.Tk):
         chk.place(x=650, y=210)
         ToolTip(chk, "Desmarque para cabeçalho simples")
 
-        ttk.Label(self, text="Delimitador:").place(x=640, y=240)
+        ttk.Label(self, text="Delimitador:").place(x=640, y=140)
         self.e_sep = ttk.Entry(self, textvariable=self.sep_var, width=6)
-        self.e_sep.place(x=740, y=237)
+        self.e_sep.place(x=740, y=137)
 
         # arquivo entrada / saída
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
