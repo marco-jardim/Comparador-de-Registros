@@ -148,6 +148,10 @@ class App(tk.Tk):
         self.openreclink_format = tk.BooleanVar(value=True)
         self._build()
 
+    def _sep(self) -> str:
+        """Return the column separator based on the selected format."""
+        return "|" if self.openreclink_format.get() else ","
+
     def _build_fields(self):
         ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
         ttk.Label(self.frm_campos, text="Comparação").grid(row=0, column=2, padx=5)
@@ -189,7 +193,7 @@ class App(tk.Tk):
         if not self.filepath:
             return
         try:
-            df = pd.read_csv(self.filepath, sep='|', nrows=0)
+            df = pd.read_csv(self.filepath, sep=self._sep(), nrows=0)
         except Exception as exc:
             messagebox.showerror('Erro', f'Falha ao ler CSV:\n{exc}')
             return
@@ -383,7 +387,12 @@ class App(tk.Tk):
         dlg = ProgressDialog(self, "Gerando amostra")
         def worker():
             try:
-                generate_sample(n, Path(dest), progress_cb=lambda p: dlg.put(p))
+                generate_sample(
+                    n,
+                    Path(dest),
+                    sep=self._sep(),
+                    progress_cb=lambda p: dlg.put(p),
+                )
                 dlg.put(100, "Concluído")
                 self.filepath = dest
                 self.e_in.delete(0, tk.END)
@@ -421,7 +430,12 @@ class App(tk.Tk):
         dlg.put(-1, "Processando…")
         def worker():
             try:
-                cr.processar_generico(self.filepath, out_base, pares)
+                cr.processar_generico(
+                    self.filepath,
+                    out_base,
+                    pares,
+                    sep=self._sep(),
+                )
                 self.output_csv = f"{out_base}.csv"
                 dlg.put(100, "Concluído")
                 messagebox.showinfo("Pronto", "Comparação concluída.")
