@@ -145,6 +145,7 @@ class App(tk.Tk):
         self.label_to_left: dict[str, str] = {}
         self.label_to_right: dict[str, str] = {}
         self.boxes: list[dict[str, any]] = []
+        self.openreclink_format = tk.BooleanVar(value=True)
         self._build()
 
     def _build_fields(self):
@@ -200,25 +201,42 @@ class App(tk.Tk):
         self.label_to_right.clear()
         left_names: list[str] = []
         right_names: list[str] = []
-        for idx, col in enumerate(df.columns):
-            parts = col.split(',')
-            base = parts[0]
-            tipo = parts[1] if len(parts) > 1 else 'C'
-            if '_' in base:
-                prefix, nome = base.split('_', 1)
-            else:
-                prefix, nome = base[0], base[1:]
-            emoji = EMOJIS.get(tipo.upper(), '')
-            label = f"{emoji + ' ' if emoji else ''}{nome}"
-            if prefix == 'R':
+        use_openrl = self.openreclink_format.get()
+        if use_openrl and not self._is_openreclink_header(df.columns):
+            use_openrl = False
+        if use_openrl:
+            for idx, col in enumerate(df.columns):
+                parts = col.split(',')
+                base = parts[0]
+                tipo = parts[1] if len(parts) > 1 else 'C'
+                if '_' in base:
+                    prefix, nome = base.split('_', 1)
+                else:
+                    prefix, nome = base[0], base[1:]
+                emoji = EMOJIS.get(tipo.upper(), '')
+                label = f"{emoji + ' ' if emoji else ''}{nome}"
+                if prefix == 'R':
+                    self.left_map[nome] = (idx, tipo)
+                    self.left_labels[nome] = label
+                    self.label_to_left[label] = nome
+                    left_names.append(label)
+                elif prefix == 'C':
+                    self.right_map[nome] = (idx, tipo)
+                    self.right_labels[nome] = label
+                    self.label_to_right[label] = nome
+                    right_names.append(label)
+        else:
+            for idx, col in enumerate(df.columns):
+                nome = col.strip()
+                tipo = 'D' if any(k in nome.lower() for k in ('data', 'nasc', 'dt')) else 'C'
+                label = f"{EMOJIS.get(tipo, '') + ' ' if EMOJIS.get(tipo, '') else ''}{nome}"
                 self.left_map[nome] = (idx, tipo)
-                self.left_labels[nome] = label
-                self.label_to_left[label] = nome
-                left_names.append(label)
-            elif prefix == 'C':
                 self.right_map[nome] = (idx, tipo)
+                self.left_labels[nome] = label
                 self.right_labels[nome] = label
+                self.label_to_left[label] = nome
                 self.label_to_right[label] = nome
+                left_names.append(label)
                 right_names.append(label)
         old_selections = [
             (w["cb1"].get(), w["cb2"].get()) for w in self.boxes
@@ -230,6 +248,18 @@ class App(tk.Tk):
             cb2['values'] = right_names
             cb1.set(old_l if old_l in left_names else "")
             cb2.set(old_r if old_r in right_names else "")
+
+    def _is_openreclink_header(self, cols: list[str]) -> bool:
+        """Return True if all columns start with R_ or C prefix."""
+        for col in cols:
+            base = col.split(',')[0]
+            if '_' in base:
+                prefix = base.split('_', 1)[0]
+            else:
+                prefix = base[:1]
+            if prefix not in ('R', 'C'):
+                return False
+        return True
 
     def _sync_pair(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
         nome = self.label_to_left.get(cb_left.get(), cb_left.get())
@@ -248,7 +278,16 @@ class App(tk.Tk):
         self.frm_campos.place(x=10, y=30)
         self._build_fields()
 
-                # arquivo entrada / saída
+        chk = ttk.Checkbutton(
+            self,
+            text="Formato OpenRecLink",
+            variable=self.openreclink_format,
+            command=self._load_header,
+        )
+        chk.place(x=650, y=210)
+        ToolTip(chk, "Desmarque para cabeçalho simples")
+
+        # arquivo entrada / saída
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
         self.e_in = ttk.Entry(self, width=30)
         self.e_in.place(x=200, y=247)

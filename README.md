@@ -111,6 +111,8 @@ Instalação típica leva menos de 1 minuto.
 \| N | Nome 2 |  O | Nome Mãe 2 |  P | Nasc. 2 |
 
 Se o seu CSV real divergir, basta selecionar as letras corretas nos comboboxes antes de comparar.
+Caso os nomes das colunas sejam simples (sem prefixos ou sufixos do OpenRecLink),
+desmarque a opção **Formato OpenRecLink** na janela principal antes de abrir o arquivo.
 
 ---
 
