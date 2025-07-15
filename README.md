@@ -113,8 +113,8 @@ Instalação típica leva menos de 1 minuto.
 Se o seu CSV real divergir, basta selecionar as letras corretas nos comboboxes antes de comparar.
 Caso os nomes das colunas sejam simples (sem prefixos ou sufixos do OpenRecLink),
 desmarque a opção **Formato OpenRecLink** na janela principal antes de abrir o arquivo.
-Quando o formato geral está ativo, o separador de colunas usado é a vírgula
-(`,`); no modo OpenRecLink, permanece o pipe (`|`).
+O separador padrão no formato geral é a vírgula (`,`); no modo OpenRecLink,
+é o pipe (`|`).  Se preferir, altere o caractere no campo **Separador**.
 
 ---
 

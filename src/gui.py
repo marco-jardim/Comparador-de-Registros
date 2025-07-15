@@ -146,11 +146,22 @@ class App(tk.Tk):
         self.label_to_right: dict[str, str] = {}
         self.boxes: list[dict[str, any]] = []
         self.openreclink_format = tk.BooleanVar(value=True)
+        self.sep_var = tk.StringVar()
+        self._set_default_sep()
         self._build()
 
+    def _set_default_sep(self) -> None:
+        """Atualiza ``sep_var`` conforme o formato escolhido."""
+        self.sep_var.set("|" if self.openreclink_format.get() else ",")
+
+    def _on_format_toggle(self) -> None:
+        """Callback para alternar o formato e atualizar o separador."""
+        self._set_default_sep()
+        self._load_header()
+
     def _sep(self) -> str:
-        """Return the column separator based on the selected format."""
-        return "|" if self.openreclink_format.get() else ","
+        """Return the column separator chosen by the user."""
+        return self.sep_var.get()
 
     def _build_fields(self):
         ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
@@ -286,10 +297,14 @@ class App(tk.Tk):
             self,
             text="Formato OpenRecLink",
             variable=self.openreclink_format,
-            command=self._load_header,
+            command=self._on_format_toggle,
         )
         chk.place(x=650, y=210)
         ToolTip(chk, "Desmarque para cabeçalho simples")
+
+        ttk.Label(self, text="Separador:").place(x=650, y=240)
+        self.e_sep = ttk.Entry(self, textvariable=self.sep_var, width=5)
+        self.e_sep.place(x=730, y=237)
 
         # arquivo entrada / saída
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
@@ -350,6 +365,7 @@ class App(tk.Tk):
         self.boxes.clear()
         self._build_fields()
         self._load_header()
+        self._set_default_sep()
 
     def _show_help(self):
         help_win = tk.Toplevel(self)
