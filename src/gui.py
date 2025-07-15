@@ -201,7 +201,10 @@ class App(tk.Tk):
         self.label_to_right.clear()
         left_names: list[str] = []
         right_names: list[str] = []
-        if self.openreclink_format.get():
+        use_openrl = self.openreclink_format.get()
+        if use_openrl and not self._is_openreclink_header(df.columns):
+            use_openrl = False
+        if use_openrl:
             for idx, col in enumerate(df.columns):
                 parts = col.split(',')
                 base = parts[0]
@@ -245,6 +248,18 @@ class App(tk.Tk):
             cb2['values'] = right_names
             cb1.set(old_l if old_l in left_names else "")
             cb2.set(old_r if old_r in right_names else "")
+
+    def _is_openreclink_header(self, cols: list[str]) -> bool:
+        """Return True if all columns start with R_ or C prefix."""
+        for col in cols:
+            base = col.split(',')[0]
+            if '_' in base:
+                prefix = base.split('_', 1)[0]
+            else:
+                prefix = base[:1]
+            if prefix not in ('R', 'C'):
+                return False
+        return True
 
     def _sync_pair(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
         nome = self.label_to_left.get(cb_left.get(), cb_left.get())
