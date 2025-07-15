@@ -11,6 +11,7 @@ import comparaRegistros as cr  # módulo já existente
 # Funções de geração em gerador_amostra.py
 
 from gerador_amostra import generate_sample
+import csv
 
 # Emojis para tipos de variáveis
 EMOJIS = {"C": "🔤", "D": "📅", "N": "🔢"}
@@ -92,35 +93,6 @@ class ProgressDialog(tk.Toplevel):
 
     def put(self, pct: int, msg: str = ""):
         self.queue.put((pct, msg))
-
-# ============================ janela de estatísticas =================================
-class StatsWindow(tk.Toplevel):
-    def __init__(self, parent: tk.Tk, csv_path: Path):
-        super().__init__(parent)
-        self.title("Estatísticas do Resultado")
-        self.geometry("420x280")
-        self.resizable(False, False)
-        try:
-            df = pd.read_csv(csv_path, sep=';', dtype=str)
-            nota = df["nota final"].str.replace(",", ".", regex=False).astype(float)
-        except Exception as exc:
-            messagebox.showerror("Erro", f"Falha ao ler CSV:\n{exc}")
-            self.destroy()
-            return
-        stats = {
-            "Registros totais": len(df),
-            "Nota média": f"{nota.mean():.2f}",
-            "Desvio padrão": f"{nota.std(ddof=0):.2f}",
-            "Nota mínima": f"{nota.min():.2f}",
-            "Nota máxima": f"{nota.max():.2f}",
-            "Nota ≥ 5,0": f"{(nota >= 5).mean() * 100:.1f}%",
-        }
-        frm = ttk.Frame(self, padding=20)
-        frm.pack(expand=True, fill="both")
-        for i, (k, v) in enumerate(stats.items()):
-            ttk.Label(frm, text=f"{k}:", font=(parent.font_family, 15, "bold")).grid(row=i, column=0, sticky="w", pady=3)
-            ttk.Label(frm, text=v, font=(parent.font_family, 15)).grid(row=i, column=1, sticky="w", pady=3)
-
 # ============================ GUI principal ==========================================
 class App(tk.Tk):
     def __init__(self):
@@ -162,6 +134,16 @@ class App(tk.Tk):
     def _sep(self) -> str:
         """Return the column separator chosen by the user."""
         return self.sep_var.get()
+
+    def _guess_sep(self, path: str) -> str:
+        """Detect a likely column separator for ``path``."""
+        try:
+            with open(path, newline="") as fh:
+                sample = fh.read(2048)
+            dialect = csv.Sniffer().sniff(sample, [",", "|", ";", "\t"])
+            return dialect.delimiter
+        except Exception:
+            return self.sep_var.get()
 
     def _build_fields(self):
         ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
@@ -302,9 +284,9 @@ class App(tk.Tk):
         chk.place(x=650, y=210)
         ToolTip(chk, "Desmarque para cabeçalho simples")
 
-        ttk.Label(self, text="Separador:").place(x=650, y=240)
-        self.e_sep = ttk.Entry(self, textvariable=self.sep_var, width=5)
-        self.e_sep.place(x=730, y=237)
+        ttk.Label(self, text="Delimitador:").place(x=640, y=240)
+        self.e_sep = ttk.Entry(self, textvariable=self.sep_var, width=6)
+        self.e_sep.place(x=740, y=237)
 
         # arquivo entrada / saída
         ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
@@ -332,9 +314,6 @@ class App(tk.Tk):
         btn_comp = ttk.Button(self, text="Comparar", command=self._comparar)
         btn_comp.place(x=650, y=272)
         ToolTip(btn_comp, "Ctrl+C")
-        btn_stats = ttk.Button(self, text="Estatísticas", command=self._mostrar_stats)
-        btn_stats.place(x=650, y=301)
-        ToolTip(btn_stats, "Ctrl+E")
         btn_reset = ttk.Button(self, text="Reiniciar", command=self._reset_vars)
         btn_reset.place(x=650, y=330)
         ToolTip(btn_reset, "F5")
@@ -346,7 +325,6 @@ class App(tk.Tk):
         self.bind("<Control-o>", lambda e: self._abrir_csv())
         self.bind("<Control-g>", lambda e: self._gera_amostra())
         self.bind("<Control-c>", lambda e: self._comparar())
-        self.bind("<Control-e>", lambda e: self._mostrar_stats())
         self.bind("<F1>", lambda e: self._show_help())
         self.bind("<F5>", lambda e: self._reset_vars())
 
@@ -357,6 +335,7 @@ class App(tk.Tk):
             self.filepath = path
             self.e_in.delete(0, tk.END)
             self.e_in.insert(0, Path(path).name)
+            self.sep_var.set(self._guess_sep(path))
             self._load_header()
 
     def _reset_vars(self):
@@ -381,7 +360,6 @@ class App(tk.Tk):
                 "Ctrl+O – Abrir CSV\n"
                 "Ctrl+G – Gerar amostra\n"
                 "Ctrl+C – Comparar\n"
-                "Ctrl+E – Estatísticas\n"
                 "F5 – Reiniciar\n"
                 "F1 – Ajuda"
             ),
@@ -460,10 +438,6 @@ class App(tk.Tk):
                 messagebox.showerror("Erro", f"Falha no processamento: {exc}")
         threading.Thread(target=worker, daemon=True).start()
 
-    def _mostrar_stats(self):
-        path = self.output_csv if os.path.isfile(self.output_csv) else filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
-        if path:
-            StatsWindow(self, Path(path))
 
 if __name__ == "__main__":
     App().mainloop()

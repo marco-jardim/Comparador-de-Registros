@@ -10,14 +10,13 @@ Originalmente escrita em Java, a lógica foi portada para Python, adicionando:
 
 * **GUI** em Tkinter com barra de progresso em tempo real
 * **Gerador de amostras sintéticas** (com typos/ruído)
-* Estatísticas resumidas pós‑processamento
 * Geração automática (e cache) das **tabelas de frequência** para bases grandes
 
 > 🗂 **Estrutura do repositório**
 >
 > ```text
 > src/
-> ├─ gui.py                # Interface Tk + progresso + estatísticas
+> ├─ gui.py                # Interface Tk com barra de progresso
 > ├─ comparaRegistros.py   # Núcleo de pontuação
 > ├─ util.py               # Soundex, padronização, Levenshtein…
 > ├─ freqbuilder.py        # Constrói tabelas de frequência on‑the‑fly
@@ -101,7 +100,6 @@ Instalação típica leva menos de 1 minuto.
    A barra mostrará o progresso.
 2. **Comparar**  → após escolher/generar o CSV, clique **Comparar**.
    Surgirá uma janela de progresso indeterminado; ao concluir, `saida.csv` (e `saida2.csv`) são criados.
-3. **Ver Estatísticas**  → clique *Estatísticas* para ver média, desvio‑padrão, etc.
 
 ### 3.2 Mapeamento de colunas
 
