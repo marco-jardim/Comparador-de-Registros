@@ -2,7 +2,7 @@ from __future__ import annotations
 import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
 
 import util
 import transformaBase as tf
@@ -217,6 +217,120 @@ def _build_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> dict[str, int]:
     return counter
 
 
+def _build_name_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> list[dict[str, int]]:
+    """
+    Build frequency maps for first, middle, and last name parts.
+
+    This function processes two columns of a DataFrame, extracts name parts
+    (first, middle, and last), and counts their occurrences across both columns.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame containing name data.
+        idx1 (int): The index of the first column to process.
+        idx2 (int): The index of the second column to process.
+
+    Returns:
+        list[dict[str, int]]: A list containing three dictionaries:
+            - The first dictionary maps first name parts to their frequencies.
+            - The second dictionary maps middle name parts to their frequencies.
+            - The third dictionary maps last name parts to their frequencies.
+    """
+    first: dict[str, int] = {}
+    middle: dict[str, int] = {}
+    last: dict[str, int] = {}
+    for val in pd.concat([df.iloc[:, idx1], df.iloc[:, idx2]]).astype(str):
+        parts = util.padroniza(val).split()
+        if not parts:
+            continue
+        first_part, last_part = parts[0], parts[-1]
+        first[first_part] = first.get(first_part, 0) + 1
+        last[last_part] = last.get(last_part, 0) + 1
+        for m in parts[1:-1]:
+            middle[m] = middle.get(m, 0) + 1
+    return [first, middle, last]
+
+
+def _criterios_nome_generico(v1: str, v2: str, freq_maps: list[dict[str, int]]) -> list[str]:
+    """
+    Compare two names and calculate similarity scores based on frequency maps.
+
+    Args:
+        v1 (str): The first name to compare.
+        v2 (str): The second name to compare.
+        freq_maps (list[dict[str, int]]): A list of frequency maps for first, middle, and last name parts.
+
+    Returns:
+        list[str]: A list of similarity scores as strings, with the final score appended at the end.
+    """
+    pontos: list[str] = ["0,0"] * 7
+    nota = 0.0
+
+    parts1 = v1.split()
+    parts2 = v2.split()
+    if not parts1 or not parts2:
+        return pontos + ["0,0"]
+
+    t1 = len(parts1)
+    if parts1[0] == parts2[0]:
+        nota += 1
+        pontos[0] = "1,0"
+    if parts1[-1] == parts2[-1]:
+        nota += 1
+        pontos[1] = "1,0"
+
+    inter = sum(1 for f in parts1 if f in parts2)
+    incr = inter / t1
+    nota += incr
+    pontos[2] = DFMT(incr).replace(".", ",")
+
+    first, middle, last = freq_maps
+    raros = 0
+    if first.get(parts1[0], 0) < 5:
+        raros += 1
+    for p in parts1[1:-1]:
+        if middle.get(p, 0) < 5:
+            raros += 1
+    if last.get(parts1[-1], 0) < 5:
+        raros += 1
+    incr = raros / t1
+    nota += incr
+    pontos[3] = DFMT(incr).replace(".", ",")
+
+    comuns = 0
+    if first.get(parts1[0], 0) > 1000:
+        comuns += 1
+    for p in parts1[1:-1]:
+        if middle.get(p, 0) > 1000:
+            comuns += 1
+    if last.get(parts1[-1], 0) > 1000:
+        comuns += 1
+    incr = -(comuns / t1)
+    nota += incr
+    pontos[4] = DFMT(incr).replace(".", ",")
+
+    parecidos = 0
+    for p1 in parts1:
+        s1 = util.soundex(p1)
+        if any(sum(c1 == c2 for c1, c2 in zip(s1, util.soundex(p2))) >= 3 for p2 in parts2):
+            parecidos += 1
+    incr = (parecidos / t1) * 0.8
+    nota += incr
+    pontos[5] = DFMT(incr).replace(".", ",")
+
+    abrevs = 0
+    for p1 in parts1:
+        if len(p1) == 1 and any(p2.startswith(p1) for p2 in parts2):
+            abrevs += 1
+    for p2 in parts2:
+        if len(p2) == 1 and any(p1.startswith(p2) for p1 in parts1):
+            abrevs += 1
+    incr = (abrevs / t1) * 0.5
+    nota += incr
+    pontos[6] = DFMT(incr).replace(".", ",")
+
+    return pontos + [DFMT(nota).replace(".", ",")]
+
+
 def _criterios_str(v1: str, v2: str, freq: dict[str, int]) -> list[str]:
     """Avalia dois textos utilizando critérios similares aos de nome."""
     pontos: list[str] = ["0,0"] * 7
@@ -291,10 +405,13 @@ def processar_generico(
     """
     df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
 
-    freq_maps: dict[int, dict[str, int]] = {}
+    freq_maps: dict[int, any] = {}
     for i, (idx1, idx2, tipo, _) in enumerate(pares):
-        if tipo.upper() == "C":
+        t = tipo.upper()
+        if t == "C":
             freq_maps[i] = _build_freq_map(df, idx1, idx2)
+        elif t == "N":
+            freq_maps[i] = _build_name_freq_map(df, idx1, idx2)
 
     linhas = []
     for _, row in df.iterrows():
@@ -303,8 +420,11 @@ def processar_generico(
         for i, (idx1, idx2, tipo, _) in enumerate(pares):
             v1 = util.padroniza(str(row.iloc[idx1]))
             v2 = util.padroniza(str(row.iloc[idx2]))
-            if tipo.upper() == "D":
+            t = tipo.upper()
+            if t == "D":
                 p = _criterios_data(v1, v2)
+            elif t == "N":
+                p = _criterios_nome_generico(v1, v2, freq_maps[i])
             else:
                 p = _criterios_str(v1, v2, freq_maps[i])
             pontos_linha.extend(p[:-1])
@@ -314,7 +434,8 @@ def processar_generico(
 
     header_criterios: list[str] = []
     for _, _, tipo, nome in pares:
-        if tipo.upper() == "D":
+        t = tipo.upper()
+        if t == "D":
             header_criterios += [
                 f"{nome} dt iguais",
                 f"{nome} dt ap 1digi",
