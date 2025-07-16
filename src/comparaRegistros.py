@@ -280,13 +280,16 @@ def processar_generico(
     arquivo_entrada: str,
     arquivo_saida: str,
     pares: list[tuple[int, int, str, str]],
+    *,
+    sep: str = "|",
 ) -> None:
     """Processa genericamente pares de colunas.
 
     ``pares`` contém ``(idx1, idx2, tipo, nome)`` onde ``tipo`` é ``"C"`` para
     strings ou ``"D"`` para datas e ``nome`` é um rótulo para os campos.
+    O delimitador das colunas é definido por ``sep`` (padrão ``"|"``).
     """
-    df = pd.read_csv(arquivo_entrada, sep="|", dtype=str).fillna("")
+    df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
 
     freq_maps: dict[int, dict[str, int]] = {}
     for i, (idx1, idx2, tipo, _) in enumerate(pares):

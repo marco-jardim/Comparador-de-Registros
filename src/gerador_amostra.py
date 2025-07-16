@@ -125,7 +125,8 @@ def generate_sample(
     """Gera ``n`` linhas de dados sintéticos em ``out_path``.
 
     O número de colunas é aleatório (30‑100) e os nomes seguem o formato
-    ``[C|R]_VAR,C|D,numero,outro``. O separador padrão é ``|``.
+    ``[C|R]_VAR,C|D,numero,outro``. O separador padrão é ``|``,
+    mas pode ser alterado pelo parâmetro ``sep``.
     """
 
     n_cols = random.randint(30, 100)
