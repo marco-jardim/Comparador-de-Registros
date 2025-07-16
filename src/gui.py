@@ -130,6 +130,7 @@ class App(tk.Tk):
         """Callback para alternar o formato e atualizar o separador."""
         self._set_default_sep()
         self._load_header()
+        self._update_tipo_widgets()
 
     def _sep(self) -> str:
         """Return the column separator chosen by the user."""
@@ -148,28 +149,54 @@ class App(tk.Tk):
     def _build_fields(self):
         ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
         ttk.Label(self.frm_campos, text="Comparação").grid(row=0, column=2, padx=5)
+        self.lbl_tipo = ttk.Label(self.frm_campos, text="Tipo")
+        if not self.openreclink_format.get():
+            self.lbl_tipo.grid(row=0, column=3, padx=5)
         btn_add = ttk.Button(self.frm_campos, text="➕", width=3, command=self._add_field)
-        btn_add.grid(row=0, column=3)
+        btn_add.grid(row=0, column=4)
         ToolTip(btn_add, "Adicionar")
         self.boxes.clear()
         self._add_field()
+        self._update_tipo_widgets()
+
+    def _update_tipo_widgets(self) -> None:
+        show = not self.openreclink_format.get()
+        if show:
+            self.lbl_tipo.grid(row=0, column=3, padx=5)
+        else:
+            self.lbl_tipo.grid_remove()
+        for i, widgets in enumerate(self.boxes, start=1):
+            if show:
+                widgets["frm_tipo"].grid(row=i, column=3, padx=5)
+                widgets["btn"].grid_configure(column=4)
+            else:
+                widgets["frm_tipo"].grid_remove()
+                widgets["btn"].grid_configure(column=3)
 
     def _add_field(self):
         row = len(self.boxes) + 1
         lbl = ttk.Label(self.frm_campos, text=f"Variável {row}:")
         cb1 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
         cb2 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+        tipo_var = tk.StringVar(value="C")
+        frm_tipo = ttk.Frame(self.frm_campos)
+        ttk.Radiobutton(frm_tipo, text="Txt", variable=tipo_var, value="C").grid(row=0, column=0)
+        ttk.Radiobutton(frm_tipo, text="Nome", variable=tipo_var, value="N").grid(row=0, column=1)
+        ttk.Radiobutton(frm_tipo, text="Data", variable=tipo_var, value="D").grid(row=0, column=2)
         btn = ttk.Button(self.frm_campos, text="🗑", width=3)
         lbl.grid(row=row, column=0, sticky="w")
         cb1.grid(row=row, column=1, padx=5, pady=2)
         cb2.grid(row=row, column=2, padx=5, pady=2)
-        btn.grid(row=row, column=3)
+        frm_tipo.grid(row=row, column=3, padx=5)
+        btn.grid(row=row, column=4)
         ToolTip(btn, "Remover")
         cb1.bind("<<ComboboxSelected>>", lambda e, a=cb1, b=cb2: self._sync_pair(a, b))
-        widgets = {"lbl": lbl, "cb1": cb1, "cb2": cb2, "btn": btn}
+        widgets = {"lbl": lbl, "cb1": cb1, "cb2": cb2, "btn": btn,
+                   "tipo_var": tipo_var, "frm_tipo": frm_tipo}
         btn.config(command=lambda w=widgets: self._del_field(w))
         self.boxes.append(widgets)
         self._load_header()
+        self._update_tipo_widgets()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
@@ -181,6 +208,7 @@ class App(tk.Tk):
             w["lbl"].config(text=f"Variável {i}:")
             for widget in w.values():
                 widget.grid_configure(row=i)
+        self._update_tipo_widgets()
 
     def _load_header(self):
         if not self.filepath:
@@ -337,6 +365,7 @@ class App(tk.Tk):
             self.e_in.insert(0, Path(path).name)
             self.sep_var.set(self._guess_sep(path))
             self._load_header()
+            self._update_tipo_widgets()
 
     def _reset_vars(self):
         for widget in self.frm_campos.winfo_children():
@@ -345,6 +374,7 @@ class App(tk.Tk):
         self._build_fields()
         self._load_header()
         self._set_default_sep()
+        self._update_tipo_widgets()
 
     def _show_help(self):
         help_win = tk.Toplevel(self)
@@ -419,6 +449,8 @@ class App(tk.Tk):
                 return
             idx1, tipo = self.left_map[c1]
             idx2, _ = self.right_map[c2]
+            if not self.openreclink_format.get():
+                tipo = widgets["tipo_var"].get() or tipo
             pares.append((idx1, idx2, tipo, c1))
         dlg = ProgressDialog(self, "Comparando registros")
         dlg.put(-1, "Processando…")
