@@ -218,7 +218,23 @@ def _build_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> dict[str, int]:
 
 
 def _build_name_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> list[dict[str, int]]:
-    """Build frequency maps for first, middle and last name parts."""
+    """
+    Build frequency maps for first, middle, and last name parts.
+
+    This function processes two columns of a DataFrame, extracts name parts
+    (first, middle, and last), and counts their occurrences across both columns.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame containing name data.
+        idx1 (int): The index of the first column to process.
+        idx2 (int): The index of the second column to process.
+
+    Returns:
+        list[dict[str, int]]: A list containing three dictionaries:
+            - The first dictionary maps first name parts to their frequencies.
+            - The second dictionary maps middle name parts to their frequencies.
+            - The third dictionary maps last name parts to their frequencies.
+    """
     first: dict[str, int] = {}
     middle: dict[str, int] = {}
     last: dict[str, int] = {}
