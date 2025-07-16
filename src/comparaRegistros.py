@@ -251,6 +251,17 @@ def _build_name_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> list[dict[st
 
 
 def _criterios_nome_generico(v1: str, v2: str, freq_maps: list[dict[str, int]]) -> list[str]:
+    """
+    Compare two names and calculate similarity scores based on frequency maps.
+
+    Args:
+        v1 (str): The first name to compare.
+        v2 (str): The second name to compare.
+        freq_maps (list[dict[str, int]]): A list of frequency maps for first, middle, and last name parts.
+
+    Returns:
+        list[str]: A list of similarity scores as strings, with the final score appended at the end.
+    """
     pontos: list[str] = ["0,0"] * 7
     nota = 0.0
 
