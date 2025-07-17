@@ -366,7 +366,7 @@ class App(tk.Tk):
 
         # Botões principais
         frm_btns = ttk.Frame(self)
-        frm_btns.grid(row=6, column=0, columnspan=3, pady=10)
+        frm_btns.grid(row=6, column=0, columnspan=3, pady=10, sticky="e")
         btn_comp = ttk.Button(frm_btns, text="Comparar", command=self._comparar)
         btn_comp.pack(side="left", padx=5)
         ToolTip(btn_comp, "Ctrl+C")
