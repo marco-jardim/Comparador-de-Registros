@@ -202,12 +202,14 @@ class App(tk.Tk):
         widgets["lbl"].destroy()
         widgets["cb1"].destroy()
         widgets["cb2"].destroy()
+        widgets["frm_tipo"].destroy()
         widgets["btn"].destroy()
         self.boxes.remove(widgets)
         for i, w in enumerate(self.boxes, start=1):
             w["lbl"].config(text=f"Variável {i}:")
             for widget in w.values():
-                widget.grid_configure(row=i)
+                if hasattr(widget, "grid_configure"):
+                    widget.grid_configure(row=i)
         self._update_tipo_widgets()
 
     def _load_header(self):
