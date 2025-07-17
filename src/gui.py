@@ -130,8 +130,11 @@ class App(tk.Tk):
         self.label_to_left: dict[str, str] = {}
         self.label_to_right: dict[str, str] = {}
         self.boxes: list[dict[str, any]] = []
+        self.input_columns: list[str] = []
         self.openreclink_format = tk.BooleanVar(value=True)
         self.sep_var = tk.StringVar()
+        self.sort_by_var = tk.StringVar(value="nota final")
+        self.sort_order_var = tk.StringVar(value="DESC")
         self._set_default_sep()
         self._build()
 
@@ -224,6 +227,7 @@ class App(tk.Tk):
         self._load_header()
         self._update_tipo_widgets()
         self._resize_to_fit()
+        self._update_sort_options()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
@@ -239,6 +243,7 @@ class App(tk.Tk):
                     widget.grid_configure(row=i)
         self._update_tipo_widgets()
         self._resize_to_fit()
+        self._update_sort_options()
 
     def _load_header(self):
         if not self.filepath:
@@ -248,6 +253,7 @@ class App(tk.Tk):
         except Exception as exc:
             messagebox.showerror('Erro', f'Falha ao ler CSV:\n{exc}')
             return
+        self.input_columns = list(df.columns)
         self.left_map.clear()
         self.right_map.clear()
         self.left_labels.clear()
@@ -303,6 +309,7 @@ class App(tk.Tk):
             cb2['values'] = right_names
             cb1.set(old_l if old_l in left_names else "")
             cb2.set(old_r if old_r in right_names else "")
+        self._update_sort_options()
 
     def _is_openreclink_header(self, cols: list[str]) -> bool:
         """Return True if all columns start with R_ or C prefix."""
@@ -320,6 +327,54 @@ class App(tk.Tk):
         nome = self.label_to_left.get(cb_left.get(), cb_left.get())
         if nome in self.right_labels:
             cb_right.set(self.right_labels[nome])
+
+    def _calc_header_criterios(self, pares) -> list[str]:
+        header_criterios: list[str] = []
+        for _, _, tipo, nome in pares:
+            t = tipo.upper()
+            if t == "D":
+                header_criterios += [
+                    f"{nome} dt iguais",
+                    f"{nome} dt ap 1digi",
+                    f"{nome} dt inv dia",
+                    f"{nome} dt inv mes",
+                    f"{nome} dt inv ano",
+                ]
+            else:
+                header_criterios += [
+                    f"{nome} prim frag igual",
+                    f"{nome} ult frag igual",
+                    f"{nome} qtd frag iguais",
+                    f"{nome} qtd frag raros",
+                    f"{nome} qtd frag comuns",
+                    f"{nome} qtd frag muito parec",
+                    f"{nome} qtd frag abrev",
+                ]
+        header_criterios.append("nota final")
+        return header_criterios
+
+    def _update_sort_options(self) -> None:
+        options = ["Nenhum"] + self.input_columns
+        pares = []
+        for widgets in self.boxes:
+            cb1 = widgets["cb1"]
+            cb2 = widgets["cb2"]
+            c1_label = cb1.get()
+            c2_label = cb2.get()
+            c1 = self.label_to_left.get(c1_label, c1_label)
+            c2 = self.label_to_right.get(c2_label, c2_label)
+            if c1 not in self.left_map or c2 not in self.right_map:
+                continue
+            idx1, tipo = self.left_map[c1]
+            idx2, _ = self.right_map[c2]
+            if not self.openreclink_format.get():
+                tipo = widgets["tipo_var"].get() or tipo
+            pares.append((idx1, idx2, tipo, c1))
+        options += self._calc_header_criterios(pares)
+        if hasattr(self, "cb_sort"):
+            self.cb_sort["values"] = options
+            if self.sort_by_var.get() not in options:
+                self.sort_by_var.set("nota final")
 
     # -------- build interface --------
     def _build(self):
@@ -365,18 +420,27 @@ class App(tk.Tk):
         self.e_out.insert(0, "saida")
         self.e_out.grid(row=4, column=1, sticky="ew", pady=2)
 
+        ttk.Label(self, text="Ordenar por:").grid(row=5, column=0, sticky="e", padx=5, pady=2)
+        self.cb_sort = ttk.Combobox(self, textvariable=self.sort_by_var, state="readonly")
+        self.cb_sort.grid(row=5, column=1, sticky="ew", pady=2)
+        frm_ord = ttk.Frame(self)
+        ttk.Radiobutton(frm_ord, text="↑", variable=self.sort_order_var, value="ASC").pack(side="left")
+        ttk.Radiobutton(frm_ord, text="↓", variable=self.sort_order_var, value="DESC").pack(side="left")
+        frm_ord.grid(row=5, column=2, sticky="w")
+        self._update_sort_options()
+
         # Amostra
-        ttk.Label(self, text="Tamanho da amostra:").grid(row=5, column=0, sticky="e", padx=5, pady=2)
+        ttk.Label(self, text="Tamanho da amostra:").grid(row=6, column=0, sticky="e", padx=5, pady=2)
         self.e_size = ttk.Entry(self, width=8)
         self.e_size.insert(0, "100")
-        self.e_size.grid(row=5, column=1, sticky="w", pady=2)
+        self.e_size.grid(row=6, column=1, sticky="w", pady=2)
         btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
-        btn_sample.grid(row=5, column=2, sticky="w", padx=5)
+        btn_sample.grid(row=6, column=2, sticky="w", padx=5)
         ToolTip(btn_sample, "Ctrl+G")
 
         # Botões principais
         frm_btns = ttk.Frame(self)
-        frm_btns.grid(row=6, column=0, columnspan=3, pady=10, sticky="e")
+        frm_btns.grid(row=7, column=0, columnspan=3, pady=10, sticky="e")
         btn_comp = ttk.Button(frm_btns, text="Comparar", command=self._comparar)
         btn_comp.pack(side="left", padx=5)
         ToolTip(btn_comp, "Ctrl+C")
@@ -414,6 +478,9 @@ class App(tk.Tk):
         self._set_default_sep()
         self._update_tipo_widgets()
         self._resize_to_fit()
+        self.sort_by_var.set("nota final")
+        self.sort_order_var.set("DESC")
+        self._update_sort_options()
 
     def _show_help(self):
         help_win = tk.Toplevel(self)
@@ -491,6 +558,7 @@ class App(tk.Tk):
             if not self.openreclink_format.get():
                 tipo = widgets["tipo_var"].get() or tipo
             pares.append((idx1, idx2, tipo, c1))
+        self._update_sort_options()
         dlg = ProgressDialog(self, "Comparando registros")
         dlg.put(-1, "Preparando…")
         def worker():
@@ -501,6 +569,8 @@ class App(tk.Tk):
                     pares,
                     sep=self._sep(),
                     progress_cb=lambda p, m, e=None: dlg.put(p, m, e),
+                    sort_by=(None if self.sort_by_var.get() == "Nenhum" else self.sort_by_var.get()),
+                    ascending=(self.sort_order_var.get() == "ASC"),
                 )
                 self.output_csv = f"{out_base}.csv"
                 dlg.put(100, "Concluído")
