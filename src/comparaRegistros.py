@@ -3,6 +3,7 @@ import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Dict, List, Any
+import time
 
 import util
 import transformaBase as tf
@@ -397,14 +398,21 @@ def processar_generico(
     pares: list[tuple[int, int, str, str]],
     *,
     sep: str = "|",
+    progress_cb=None,
 ) -> None:
     """Processa genericamente pares de colunas.
 
     ``pares`` contém ``(idx1, idx2, tipo, nome)`` onde ``tipo`` é ``"C"`` para
     strings ou ``"D"`` para datas e ``nome`` é um rótulo para os campos.
     O delimitador das colunas é definido por ``sep`` (padrão ``"|"``).
+
+    ``progress_cb`` recebe ``(pct, msg, eta)`` para atualizar uma barra de
+    progresso opcional.
     """
     df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
+    total = len(df)
+    if progress_cb:
+        progress_cb(0, f"0/{total}")
 
     freq_maps: dict[int, any] = {}
     for i, (idx1, idx2, tipo, _) in enumerate(pares):
@@ -415,23 +423,40 @@ def processar_generico(
             freq_maps[i] = _build_name_freq_map(df, idx1, idx2)
 
     linhas = []
-    for _, row in df.iterrows():
+    start = time.time()
+    first_line_time: float | None = None
+    last_pct = -1
+    for i, (_, row) in enumerate(df.iterrows()):
+        line_start = time.time()
         pontos_linha: list[str] = []
         nota_total = 0.0
-        for i, (idx1, idx2, tipo, _) in enumerate(pares):
+        for j, (idx1, idx2, tipo, _) in enumerate(pares):
             v1 = util.padroniza(str(row.iloc[idx1]))
             v2 = util.padroniza(str(row.iloc[idx2]))
             t = tipo.upper()
             if t == "D":
                 p = _criterios_data(v1, v2)
             elif t == "N":
-                p = _criterios_nome_generico(v1, v2, freq_maps[i])
+                p = _criterios_nome_generico(v1, v2, freq_maps[j])
             else:
-                p = _criterios_str(v1, v2, freq_maps[i])
+                p = _criterios_str(v1, v2, freq_maps[j])
             pontos_linha.extend(p[:-1])
             nota_total += float(p[-1].replace(",", "."))
         pontos_linha.append(DFMT(nota_total).replace(".", ","))
         linhas.append(list(row) + pontos_linha)
+        elapsed = time.time() - start
+        if first_line_time is None:
+            first_line_time = time.time() - line_start
+        est_total = first_line_time * total if first_line_time else 0
+        eta = est_total - elapsed
+        if progress_cb:
+            pct = int((i + 1) * 100 / total)
+            if pct != last_pct:
+                progress_cb(pct, f"{i+1}/{total}", max(0, eta))
+                last_pct = pct
+
+    if progress_cb and last_pct < 100:
+        progress_cb(100, f"{total}/{total}", 0)
 
     header_criterios: list[str] = []
     for _, _, tipo, nome in pares:
