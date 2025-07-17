@@ -99,7 +99,7 @@ class App(tk.Tk):
         super().__init__()
         self.title("Comparação de Registros")
         self.geometry("900x520")
-        self.resizable(False, False)
+        self.resizable(True, True)
 
         default_font = tkfont.nametofont("TkDefaultFont")
         self.font_family = default_font.actual("family")
@@ -121,6 +121,9 @@ class App(tk.Tk):
         self.sep_var = tk.StringVar()
         self._set_default_sep()
         self._build()
+        self.update_idletasks()
+        self.base_width = self.winfo_width()
+        self.base_height = self.winfo_height()
 
     def _set_default_sep(self) -> None:
         """Atualiza ``sep_var`` conforme o formato escolhido."""
@@ -172,6 +175,16 @@ class App(tk.Tk):
             else:
                 widgets["frm_tipo"].grid_remove()
                 widgets["btn"].grid_configure(column=3)
+        self._adjust_window()
+
+    def _adjust_window(self) -> None:
+        """Resize window based on content, keeping at least the base size."""
+        self.update_idletasks()
+        req_w = self.winfo_reqwidth()
+        req_h = self.winfo_reqheight()
+        width = max(self.base_width, req_w)
+        height = max(self.base_height, req_h)
+        self.geometry(f"{width}x{height}")
 
     def _add_field(self):
         row = len(self.boxes) + 1
@@ -197,6 +210,7 @@ class App(tk.Tk):
         self.boxes.append(widgets)
         self._load_header()
         self._update_tipo_widgets()
+        self._adjust_window()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
@@ -211,6 +225,7 @@ class App(tk.Tk):
                 if hasattr(widget, "grid_configure"):
                     widget.grid_configure(row=i)
         self._update_tipo_widgets()
+        self._adjust_window()
 
     def _load_header(self):
         if not self.filepath:
@@ -295,60 +310,69 @@ class App(tk.Tk):
 
     # -------- build interface --------
     def _build(self):
+        self.frm_main = ttk.Frame(self)
+        self.frm_main.pack(fill="both", expand=True, padx=10, pady=10)
+
         ttk.Label(
-            self,
+            self.frm_main,
             text="Selecione as colunas para comparação",
             font=(self.font_family, 15, "bold"),
-        ).place(x=10, y=5)
+        ).pack(anchor="w")
 
-        self.frm_campos = ttk.Frame(self)
-        self.frm_campos.place(x=10, y=30)
+        self.frm_campos = ttk.Frame(self.frm_main)
+        self.frm_campos.pack(fill="x", pady=5)
         self._build_fields()
 
+        frm_opts = ttk.Frame(self.frm_main)
+        frm_opts.pack(fill="x", pady=5)
+        ttk.Label(frm_opts, text="Delimitador:").pack(side="left")
+        self.e_sep = ttk.Entry(frm_opts, textvariable=self.sep_var, width=6)
+        self.e_sep.pack(side="left", padx=(0, 10))
         chk = ttk.Checkbutton(
-            self,
+            frm_opts,
             text="Formato OpenRecLink",
             variable=self.openreclink_format,
             command=self._on_format_toggle,
         )
-        chk.place(x=650, y=210)
+        chk.pack(side="left")
         ToolTip(chk, "Desmarque para cabeçalho simples")
 
-        ttk.Label(self, text="Delimitador:").place(x=640, y=140)
-        self.e_sep = ttk.Entry(self, textvariable=self.sep_var, width=6)
-        self.e_sep.place(x=740, y=137)
-
-        # arquivo entrada / saída
-        ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
-        self.e_in = ttk.Entry(self, width=30)
-        self.e_in.place(x=200, y=247)
-        btn_open = ttk.Button(self, text="Abrir", command=self._abrir_csv)
-        btn_open.place(x=650, y=243)
+        frm_in = ttk.Frame(self.frm_main)
+        frm_in.pack(fill="x", pady=5)
+        ttk.Label(frm_in, text="Arquivo de entrada:").pack(side="left")
+        self.e_in = ttk.Entry(frm_in, width=30)
+        self.e_in.pack(side="left", padx=5, fill="x", expand=True)
+        btn_open = ttk.Button(frm_in, text="Abrir", command=self._abrir_csv)
+        btn_open.pack(side="left", padx=5)
         ToolTip(btn_open, "Ctrl+O")
 
-        ttk.Label(self, text="Arquivo de saída (base):").place(x=10, y=280)
-        self.e_out = ttk.Entry(self, width=30)
+        frm_out = ttk.Frame(self.frm_main)
+        frm_out.pack(fill="x", pady=5)
+        ttk.Label(frm_out, text="Arquivo de saída (base):").pack(side="left")
+        self.e_out = ttk.Entry(frm_out, width=30)
         self.e_out.insert(0, "saida")
-        self.e_out.place(x=200, y=277)
+        self.e_out.pack(side="left", padx=5, fill="x", expand=True)
 
-        # Amostra
-        ttk.Label(self, text="Tamanho da amostra:").place(x=10, y=325)
-        self.e_size = ttk.Entry(self, width=8)
+        frm_sample = ttk.Frame(self.frm_main)
+        frm_sample.pack(fill="x", pady=5)
+        ttk.Label(frm_sample, text="Tamanho da amostra:").pack(side="left")
+        self.e_size = ttk.Entry(frm_sample, width=8)
         self.e_size.insert(0, "100")
-        self.e_size.place(x=200, y=325)
-        btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
-        btn_sample.place(x=290, y=322)
+        self.e_size.pack(side="left", padx=5)
+        btn_sample = ttk.Button(frm_sample, text="Gerar amostra", command=self._gera_amostra)
+        btn_sample.pack(side="left", padx=5)
         ToolTip(btn_sample, "Ctrl+G")
 
-        # Botões principais
-        btn_comp = ttk.Button(self, text="Comparar", command=self._comparar)
-        btn_comp.place(x=650, y=272)
+        frm_btns = ttk.Frame(self.frm_main)
+        frm_btns.pack(fill="x", pady=5)
+        btn_help = ttk.Button(frm_btns, text="Ajuda", command=self._show_help)
+        btn_help.pack(side="right", padx=5)
+        btn_reset = ttk.Button(frm_btns, text="Reiniciar", command=self._reset_vars)
+        btn_reset.pack(side="right", padx=5)
+        btn_comp = ttk.Button(frm_btns, text="Comparar", command=self._comparar)
+        btn_comp.pack(side="right", padx=5)
         ToolTip(btn_comp, "Ctrl+C")
-        btn_reset = ttk.Button(self, text="Reiniciar", command=self._reset_vars)
-        btn_reset.place(x=650, y=330)
         ToolTip(btn_reset, "F5")
-        btn_help = ttk.Button(self, text="Ajuda", command=self._show_help)
-        btn_help.place(x=650, y=359)
         ToolTip(btn_help, "F1")
 
         # Atalhos de teclado
@@ -368,6 +392,7 @@ class App(tk.Tk):
             self.sep_var.set(self._guess_sep(path))
             self._load_header()
             self._update_tipo_widgets()
+            self._adjust_window()
 
     def _reset_vars(self):
         for widget in self.frm_campos.winfo_children():
@@ -377,6 +402,7 @@ class App(tk.Tk):
         self._load_header()
         self._set_default_sep()
         self._update_tipo_widgets()
+        self._adjust_window()
 
     def _show_help(self):
         help_win = tk.Toplevel(self)
