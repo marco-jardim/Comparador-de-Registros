@@ -98,8 +98,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Comparação de Registros")
-        self.geometry("900x520")
-        self.resizable(False, False)
+        self.default_width = 900
+        self.default_height = 520
+        self.geometry(f"{self.default_width}x{self.default_height}")
+        # Permite que a janela seja redimensionada
+        self.resizable(True, True)
 
         default_font = tkfont.nametofont("TkDefaultFont")
         self.font_family = default_font.actual("family")
@@ -147,6 +150,8 @@ class App(tk.Tk):
             return self.sep_var.get()
 
     def _build_fields(self):
+        self.frm_campos.columnconfigure(1, weight=1)
+        self.frm_campos.columnconfigure(2, weight=1)
         ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
         ttk.Label(self.frm_campos, text="Comparação").grid(row=0, column=2, padx=5)
         self.lbl_tipo = ttk.Label(self.frm_campos, text="Tipo")
@@ -173,11 +178,22 @@ class App(tk.Tk):
                 widgets["frm_tipo"].grid_remove()
                 widgets["btn"].grid_configure(column=3)
 
+    def _resize_to_fit(self) -> None:
+        """Adjust the window height based on the number of fields."""
+        self.update_idletasks()
+        needed = self.winfo_reqheight()
+        cur_h = self.winfo_height()
+        default = self.default_height
+        if needed > cur_h:
+            self.geometry(f"{self.winfo_width()}x{needed}")
+        elif cur_h > default and needed <= default:
+            self.geometry(f"{self.winfo_width()}x{default}")
+
     def _add_field(self):
         row = len(self.boxes) + 1
         lbl = ttk.Label(self.frm_campos, text=f"Variável {row}:")
-        cb1 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
-        cb2 = ttk.Combobox(self.frm_campos, state="readonly", width=20)
+        cb1 = ttk.Combobox(self.frm_campos, state="readonly")
+        cb2 = ttk.Combobox(self.frm_campos, state="readonly")
         tipo_var = tk.StringVar(value="C")
         frm_tipo = ttk.Frame(self.frm_campos)
         ttk.Radiobutton(frm_tipo, text="Txt", variable=tipo_var, value="C").grid(row=0, column=0)
@@ -185,8 +201,8 @@ class App(tk.Tk):
         ttk.Radiobutton(frm_tipo, text="Data", variable=tipo_var, value="D").grid(row=0, column=2)
         btn = ttk.Button(self.frm_campos, text="🗑", width=3)
         lbl.grid(row=row, column=0, sticky="w")
-        cb1.grid(row=row, column=1, padx=5, pady=2)
-        cb2.grid(row=row, column=2, padx=5, pady=2)
+        cb1.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
+        cb2.grid(row=row, column=2, padx=5, pady=2, sticky="ew")
         frm_tipo.grid(row=row, column=3, padx=5)
         btn.grid(row=row, column=4)
         ToolTip(btn, "Remover")
@@ -197,6 +213,7 @@ class App(tk.Tk):
         self.boxes.append(widgets)
         self._load_header()
         self._update_tipo_widgets()
+        self._resize_to_fit()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
@@ -211,6 +228,7 @@ class App(tk.Tk):
                 if hasattr(widget, "grid_configure"):
                     widget.grid_configure(row=i)
         self._update_tipo_widgets()
+        self._resize_to_fit()
 
     def _load_header(self):
         if not self.filepath:
@@ -295,15 +313,25 @@ class App(tk.Tk):
 
     # -------- build interface --------
     def _build(self):
+        # layout geral usando grid para permitir expansão e redimensionamento
+        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=1)
+        self.columnconfigure(2, weight=1)
+
         ttk.Label(
             self,
             text="Selecione as colunas para comparação",
             font=(self.font_family, 15, "bold"),
-        ).place(x=10, y=5)
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=5)
 
         self.frm_campos = ttk.Frame(self)
-        self.frm_campos.place(x=10, y=30)
+        self.frm_campos.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=10)
+        self.rowconfigure(1, weight=1)
         self._build_fields()
+
+        ttk.Label(self, text="Delimitador:").grid(row=2, column=0, sticky="e", padx=5)
+        self.e_sep = ttk.Entry(self, textvariable=self.sep_var, width=6)
+        self.e_sep.grid(row=2, column=1, sticky="w")
 
         chk = ttk.Checkbutton(
             self,
@@ -311,44 +339,42 @@ class App(tk.Tk):
             variable=self.openreclink_format,
             command=self._on_format_toggle,
         )
-        chk.place(x=650, y=210)
+        chk.grid(row=2, column=2, sticky="w", padx=5)
         ToolTip(chk, "Desmarque para cabeçalho simples")
 
-        ttk.Label(self, text="Delimitador:").place(x=640, y=140)
-        self.e_sep = ttk.Entry(self, textvariable=self.sep_var, width=6)
-        self.e_sep.place(x=740, y=137)
-
         # arquivo entrada / saída
-        ttk.Label(self, text="Arquivo de entrada:").place(x=10, y=250)
-        self.e_in = ttk.Entry(self, width=30)
-        self.e_in.place(x=200, y=247)
+        ttk.Label(self, text="Arquivo de entrada:").grid(row=3, column=0, sticky="e", padx=5, pady=2)
+        self.e_in = ttk.Entry(self)
+        self.e_in.grid(row=3, column=1, sticky="ew", pady=2)
         btn_open = ttk.Button(self, text="Abrir", command=self._abrir_csv)
-        btn_open.place(x=650, y=243)
+        btn_open.grid(row=3, column=2, sticky="w", padx=5)
         ToolTip(btn_open, "Ctrl+O")
 
-        ttk.Label(self, text="Arquivo de saída (base):").place(x=10, y=280)
-        self.e_out = ttk.Entry(self, width=30)
+        ttk.Label(self, text="Arquivo de saída (base):").grid(row=4, column=0, sticky="e", padx=5, pady=2)
+        self.e_out = ttk.Entry(self)
         self.e_out.insert(0, "saida")
-        self.e_out.place(x=200, y=277)
+        self.e_out.grid(row=4, column=1, sticky="ew", pady=2)
 
         # Amostra
-        ttk.Label(self, text="Tamanho da amostra:").place(x=10, y=325)
+        ttk.Label(self, text="Tamanho da amostra:").grid(row=5, column=0, sticky="e", padx=5, pady=2)
         self.e_size = ttk.Entry(self, width=8)
         self.e_size.insert(0, "100")
-        self.e_size.place(x=200, y=325)
+        self.e_size.grid(row=5, column=1, sticky="w", pady=2)
         btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
-        btn_sample.place(x=290, y=322)
+        btn_sample.grid(row=5, column=2, sticky="w", padx=5)
         ToolTip(btn_sample, "Ctrl+G")
 
         # Botões principais
-        btn_comp = ttk.Button(self, text="Comparar", command=self._comparar)
-        btn_comp.place(x=650, y=272)
+        frm_btns = ttk.Frame(self)
+        frm_btns.grid(row=6, column=0, columnspan=3, pady=10, sticky="e")
+        btn_comp = ttk.Button(frm_btns, text="Comparar", command=self._comparar)
+        btn_comp.pack(side="left", padx=5)
         ToolTip(btn_comp, "Ctrl+C")
-        btn_reset = ttk.Button(self, text="Reiniciar", command=self._reset_vars)
-        btn_reset.place(x=650, y=330)
+        btn_reset = ttk.Button(frm_btns, text="Reiniciar", command=self._reset_vars)
+        btn_reset.pack(side="left", padx=5)
         ToolTip(btn_reset, "F5")
-        btn_help = ttk.Button(self, text="Ajuda", command=self._show_help)
-        btn_help.place(x=650, y=359)
+        btn_help = ttk.Button(frm_btns, text="Ajuda", command=self._show_help)
+        btn_help.pack(side="left", padx=5)
         ToolTip(btn_help, "F1")
 
         # Atalhos de teclado
@@ -377,6 +403,7 @@ class App(tk.Tk):
         self._load_header()
         self._set_default_sep()
         self._update_tipo_widgets()
+        self._resize_to_fit()
 
     def _show_help(self):
         help_win = tk.Toplevel(self)
