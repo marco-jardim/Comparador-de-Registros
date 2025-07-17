@@ -7,10 +7,6 @@ import threading, queue, time, os
 import pandas as pd
 
 import comparaRegistros as cr  # módulo já existente
-# ===================== utilidades de geração de dados sintéticos =================
-# Funções de geração em gerador_amostra.py
-
-from gerador_amostra import generate_sample
 import csv
 
 # Emojis para tipos de variáveis
@@ -429,18 +425,9 @@ class App(tk.Tk):
         frm_ord.grid(row=5, column=2, sticky="w")
         self._update_sort_options()
 
-        # Amostra
-        ttk.Label(self, text="Tamanho da amostra:").grid(row=6, column=0, sticky="e", padx=5, pady=2)
-        self.e_size = ttk.Entry(self, width=8)
-        self.e_size.insert(0, "100")
-        self.e_size.grid(row=6, column=1, sticky="w", pady=2)
-        btn_sample = ttk.Button(self, text="Gerar amostra", command=self._gera_amostra)
-        btn_sample.grid(row=6, column=2, sticky="w", padx=5)
-        ToolTip(btn_sample, "Ctrl+G")
-
         # Botões principais
         frm_btns = ttk.Frame(self)
-        frm_btns.grid(row=7, column=0, columnspan=3, pady=10, sticky="e")
+        frm_btns.grid(row=6, column=0, columnspan=3, pady=10, sticky="e")
         btn_comp = ttk.Button(frm_btns, text="Comparar", command=self._comparar)
         btn_comp.pack(side="left", padx=5)
         ToolTip(btn_comp, "Ctrl+C")
@@ -453,7 +440,6 @@ class App(tk.Tk):
 
         # Atalhos de teclado
         self.bind("<Control-o>", lambda e: self._abrir_csv())
-        self.bind("<Control-g>", lambda e: self._gera_amostra())
         self.bind("<Control-c>", lambda e: self._comparar())
         self.bind("<F1>", lambda e: self._show_help())
         self.bind("<F5>", lambda e: self._reset_vars())
@@ -489,12 +475,11 @@ class App(tk.Tk):
         ttk.Label(
             help_win,
             text=(
-                "1. Abra ou gere um CSV.\n"
+                "1. Abra um CSV.\n"
                 "2. Escolha as colunas de referência e comparação.\n"
                 "3. Clique em Comparar para gerar o resultado.\n\n"
                 "Atalhos:\n"
                 "Ctrl+O – Abrir CSV\n"
-                "Ctrl+G – Gerar amostra\n"
                 "Ctrl+C – Comparar\n"
                 "F5 – Reiniciar\n"
                 "F1 – Ajuda"
@@ -503,40 +488,10 @@ class App(tk.Tk):
             padding=10,
         ).pack(fill="both", expand=True)
 
-    def _gera_amostra(self):
-        try:
-            n = int(self.e_size.get())
-            if n <= 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror("Erro", "Informe um tamanho inteiro positivo.")
-            return
-        dest = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
-        if not dest:
-            return
-        dlg = ProgressDialog(self, "Gerando amostra")
-        def worker():
-            try:
-                generate_sample(
-                    n,
-                    Path(dest),
-                    sep=self._sep(),
-                    progress_cb=lambda p: dlg.put(p),
-                )
-                dlg.put(100, "Concluído")
-                self.filepath = dest
-                self.e_in.delete(0, tk.END)
-                self.e_in.insert(0, Path(dest).name)
-                self._load_header()
-                messagebox.showinfo("Ok", f"Amostra criada em {dest}")
-            except Exception as e:
-                dlg.destroy()
-                messagebox.showerror("Erro", f"Falha ao gerar amostra: {e}")
-        threading.Thread(target=worker, daemon=True).start()
 
     def _comparar(self):
         if not self.filepath:
-            messagebox.showwarning("Atenção", "Selecione ou gere um arquivo de entrada.")
+            messagebox.showwarning("Atenção", "Selecione um arquivo de entrada.")
             return
         out_base = self.e_out.get().strip()
         if not out_base:
