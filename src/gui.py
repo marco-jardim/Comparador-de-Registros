@@ -98,7 +98,9 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Comparação de Registros")
-        self.geometry("900x520")
+        self.default_width = 900
+        self.default_height = 520
+        self.geometry(f"{self.default_width}x{self.default_height}")
         # Permite que a janela seja redimensionada
         self.resizable(True, True)
 
@@ -176,6 +178,17 @@ class App(tk.Tk):
                 widgets["frm_tipo"].grid_remove()
                 widgets["btn"].grid_configure(column=3)
 
+    def _resize_to_fit(self) -> None:
+        """Adjust the window height based on the number of fields."""
+        self.update_idletasks()
+        needed = self.winfo_reqheight()
+        cur_h = self.winfo_height()
+        default = self.default_height
+        if needed > cur_h:
+            self.geometry(f"{self.winfo_width()}x{needed}")
+        elif cur_h > default and needed <= default:
+            self.geometry(f"{self.winfo_width()}x{default}")
+
     def _add_field(self):
         row = len(self.boxes) + 1
         lbl = ttk.Label(self.frm_campos, text=f"Variável {row}:")
@@ -200,6 +213,7 @@ class App(tk.Tk):
         self.boxes.append(widgets)
         self._load_header()
         self._update_tipo_widgets()
+        self._resize_to_fit()
 
     def _del_field(self, widgets):
         widgets["lbl"].destroy()
@@ -214,6 +228,7 @@ class App(tk.Tk):
                 if hasattr(widget, "grid_configure"):
                     widget.grid_configure(row=i)
         self._update_tipo_widgets()
+        self._resize_to_fit()
 
     def _load_header(self):
         if not self.filepath:
@@ -388,6 +403,7 @@ class App(tk.Tk):
         self._load_header()
         self._set_default_sep()
         self._update_tipo_widgets()
+        self._resize_to_fit()
 
     def _show_help(self):
         help_win = tk.Toplevel(self)
