@@ -9,7 +9,6 @@
 Originalmente escrita em Java, a lógica foi portada para Python, adicionando:
 
 * **GUI** em Tkinter com barra de progresso em tempo real
-* **Gerador de amostras sintéticas** (com typos/ruído)
 * Geração automática (e cache) das **tabelas de frequência** para bases grandes
 
 > 🗂 **Estrutura do repositório**
@@ -96,15 +95,14 @@ Instalação típica leva menos de 1 minuto.
 
 ### 3.1 Uso rápido
 
-1. **Gerar Amostra**  → informe quantidade (ex.: `1000`)   ▶ *Gerar amostra*.
-   A barra mostrará o progresso.
-2. **Comparar**  → após escolher/generar o CSV, clique **Comparar**.
+1. **Abrir CSV**  → clique em **Abrir** e selecione seu arquivo.
+2. **Comparar**  → após escolher o CSV, clique **Comparar**.
    Surgirá uma janela de progresso indeterminado; ao concluir, `saida.csv` é criado usando o mesmo separador do arquivo de entrada.
    Por padrão o resultado é ordenado pela **nota final** (ordem decrescente). Você pode alterar o critério e a direção da ordenação antes de comparar.
 
 ### 3.2 Mapeamento de colunas
 
-*Layout padrão (amostra)*:
+*Layout padrão*:
 \| Coluna | Campo |
 \| J | Nome 1 |  K | Nome Mãe 1 |  L | Nasc. 1 |
 \| N | Nome 2 |  O | Nome Mãe 2 |  P | Nasc. 2 |
