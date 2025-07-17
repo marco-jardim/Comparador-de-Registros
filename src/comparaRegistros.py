@@ -424,8 +424,10 @@ def processar_generico(
 
     linhas = []
     start = time.time()
-    first_line_time: float | None = None
     last_pct = -1
+    last_eta_line = 0
+    last_eta_time = start
+    last_eta = 0.0
     for i, (_, row) in enumerate(df.iterrows()):
         line_start = time.time()
         pontos_linha: list[str] = []
@@ -444,16 +446,23 @@ def processar_generico(
             nota_total += float(p[-1].replace(",", "."))
         pontos_linha.append(DFMT(nota_total).replace(".", ","))
         linhas.append(list(row) + pontos_linha)
-        elapsed = time.time() - start
-        if first_line_time is None:
-            first_line_time = time.time() - line_start
-        est_total = first_line_time * total if first_line_time else 0
-        eta = est_total - elapsed
-        if progress_cb:
+        now = time.time()
+        if progress_cb and (
+            (i + 1) % 1000 == 0 or i + 1 == total or int((i + 1) * 100 / total) != last_pct
+        ):
             pct = int((i + 1) * 100 / total)
-            if pct != last_pct:
-                progress_cb(pct, f"{i+1}/{total}", max(0, eta))
-                last_pct = pct
+            if (i + 1) % 1000 == 0 or i + 1 == total:
+                elapsed = now - last_eta_time
+                lines = (i + 1) - last_eta_line
+                avg = elapsed / lines if lines else 0
+                last_eta = avg * (total - (i + 1))
+                last_eta_time = now
+                last_eta_line = i + 1
+            else:
+                last_eta = max(0.0, last_eta - (now - last_eta_time))
+                last_eta_time = now
+            progress_cb(pct, f"{i+1}/{total}", last_eta)
+            last_pct = pct
 
     if progress_cb and last_pct < 100:
         progress_cb(100, f"{total}/{total}", 0)
