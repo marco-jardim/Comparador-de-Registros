@@ -136,6 +136,8 @@ def processar(
     cache_dir: str = ".freq_cache",
     *,
     sep: str = ";",
+    sort_by: str | None = "nota final",
+    ascending: bool = False,
 ) -> None:
     Nome1, Mae1, Nasc1, Nome2, Mae2, Nasc2 = idxs
     freq_paths = (
@@ -206,6 +208,10 @@ def processar(
     ]
     header = list(df.columns) + header_criterios
     out_df = pd.DataFrame(linhas_saida, columns=header)
+    if sort_by is not None:
+        if sort_by not in out_df.columns:
+            raise ValueError(f"Coluna '{sort_by}' não encontrada para ordenação")
+        out_df.sort_values(by=sort_by, ascending=ascending, inplace=True)
 
     out_df.to_csv(f"{arquivo_saida}.csv", sep=sep, index=False)
 
@@ -399,6 +405,8 @@ def processar_generico(
     *,
     sep: str = "|",
     progress_cb=None,
+    sort_by: str | None = "nota final",
+    ascending: bool = False,
 ) -> None:
     """Processa genericamente pares de colunas.
 
@@ -492,4 +500,8 @@ def processar_generico(
 
     header = list(df.columns) + header_criterios
     out_df = pd.DataFrame(linhas, columns=header)
+    if sort_by is not None:
+        if sort_by not in out_df.columns:
+            raise ValueError(f"Coluna '{sort_by}' não encontrada para ordenação")
+        out_df.sort_values(by=sort_by, ascending=ascending, inplace=True)
     out_df.to_csv(f"{arquivo_saida}.csv", sep=sep, index=False)

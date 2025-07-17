@@ -100,6 +100,7 @@ Instalação típica leva menos de 1 minuto.
    A barra mostrará o progresso.
 2. **Comparar**  → após escolher/generar o CSV, clique **Comparar**.
    Surgirá uma janela de progresso indeterminado; ao concluir, `saida.csv` é criado usando o mesmo separador do arquivo de entrada.
+   Por padrão o resultado é ordenado pela **nota final** (ordem decrescente). Você pode alterar o critério e a direção da ordenação antes de comparar.
 
 ### 3.2 Mapeamento de colunas
 
