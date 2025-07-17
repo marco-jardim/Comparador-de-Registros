@@ -1,5 +1,7 @@
 from __future__ import annotations
+import os
 import pandas as pd
+from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Dict, List, Any
@@ -14,6 +16,37 @@ DFMT = lambda x: format(Decimal(x).quantize(Decimal("0.00"), rounding=ROUND_HALF
 
 # Índices para saber em qual fatia da lista de frequências procurar
 PACIENTE, MAE = 0, 1
+
+# Globals used by worker processes
+_WORK_PARES: list[tuple[int, int, str, str]] = []
+_WORK_FREQ_MAPS: dict[int, any] = {}
+
+
+def _init_worker(pares, freq_maps):
+    """Initializer for worker processes."""
+    global _WORK_PARES, _WORK_FREQ_MAPS
+    _WORK_PARES = pares
+    _WORK_FREQ_MAPS = freq_maps
+
+
+def _process_row(row: tuple) -> list:
+    """Process a single CSV row (tuple of values)."""
+    pontos_linha: list[str] = []
+    nota_total = 0.0
+    for j, (idx1, idx2, tipo, _) in enumerate(_WORK_PARES):
+        v1 = util.padroniza(str(row[idx1]))
+        v2 = util.padroniza(str(row[idx2]))
+        t = tipo.upper()
+        if t == "D":
+            p = _criterios_data(v1, v2)
+        elif t == "N":
+            p = _criterios_nome_generico(v1, v2, _WORK_FREQ_MAPS[j])
+        else:
+            p = _criterios_str(v1, v2, _WORK_FREQ_MAPS[j])
+        pontos_linha.extend(p[:-1])
+        nota_total += float(p[-1].replace(",", "."))
+    pontos_linha.append(DFMT(nota_total).replace(".", ","))
+    return list(row) + pontos_linha
 
 
 def _criterios_nome(nome1: str, nome2: str,
@@ -407,6 +440,7 @@ def processar_generico(
     progress_cb=None,
     sort_by: str | None = "nota final",
     ascending: bool = False,
+    workers: int | None = None,
 ) -> None:
     """Processa genericamente pares de colunas.
 
@@ -416,6 +450,8 @@ def processar_generico(
 
     ``progress_cb`` recebe ``(pct, msg, eta)`` para atualizar uma barra de
     progresso opcional.
+    ``workers`` define o número de processos para paralelizar o cálculo
+    (``None`` usa ``os.cpu_count()``).
     """
     df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
     total = len(df)
@@ -436,41 +472,70 @@ def processar_generico(
     last_eta_line = 0
     last_eta_time = start
     last_eta = 0.0
-    for i, (_, row) in enumerate(df.iterrows()):
-        line_start = time.time()
-        pontos_linha: list[str] = []
-        nota_total = 0.0
-        for j, (idx1, idx2, tipo, _) in enumerate(pares):
-            v1 = util.padroniza(str(row.iloc[idx1]))
-            v2 = util.padroniza(str(row.iloc[idx2]))
-            t = tipo.upper()
-            if t == "D":
-                p = _criterios_data(v1, v2)
-            elif t == "N":
-                p = _criterios_nome_generico(v1, v2, freq_maps[j])
-            else:
-                p = _criterios_str(v1, v2, freq_maps[j])
-            pontos_linha.extend(p[:-1])
-            nota_total += float(p[-1].replace(",", "."))
-        pontos_linha.append(DFMT(nota_total).replace(".", ","))
-        linhas.append(list(row) + pontos_linha)
-        now = time.time()
-        if progress_cb and (
-            (i + 1) % 1000 == 0 or i + 1 == total or int((i + 1) * 100 / total) != last_pct
-        ):
-            pct = int((i + 1) * 100 / total)
-            if (i + 1) % 1000 == 0 or i + 1 == total:
-                elapsed = now - last_eta_time
-                lines = (i + 1) - last_eta_line
-                avg = elapsed / lines if lines else 0
-                last_eta = avg * (total - (i + 1))
-                last_eta_time = now
-                last_eta_line = i + 1
-            else:
-                last_eta = max(0.0, last_eta - (now - last_eta_time))
-                last_eta_time = now
-            progress_cb(pct, f"{i+1}/{total}", last_eta)
-            last_pct = pct
+
+    if workers is None:
+        workers = os.cpu_count() or 1
+    if workers < 1:
+        workers = 1
+
+    if workers == 1:
+        row_iter = df.itertuples(index=False, name=None)
+        for i, row in enumerate(row_iter):
+            pontos_linha: list[str] = []
+            nota_total = 0.0
+            for j, (idx1, idx2, tipo, _) in enumerate(pares):
+                v1 = util.padroniza(str(row[idx1]))
+                v2 = util.padroniza(str(row[idx2]))
+                t = tipo.upper()
+                if t == "D":
+                    p = _criterios_data(v1, v2)
+                elif t == "N":
+                    p = _criterios_nome_generico(v1, v2, freq_maps[j])
+                else:
+                    p = _criterios_str(v1, v2, freq_maps[j])
+                pontos_linha.extend(p[:-1])
+                nota_total += float(p[-1].replace(",", "."))
+            pontos_linha.append(DFMT(nota_total).replace(".", ","))
+            linhas.append(list(row) + pontos_linha)
+            now = time.time()
+            if progress_cb and (
+                (i + 1) % 1000 == 0 or i + 1 == total or int((i + 1) * 100 / total) != last_pct
+            ):
+                pct = int((i + 1) * 100 / total)
+                if (i + 1) % 1000 == 0 or i + 1 == total:
+                    elapsed = now - last_eta_time
+                    lines = (i + 1) - last_eta_line
+                    avg = elapsed / lines if lines else 0
+                    last_eta = avg * (total - (i + 1))
+                    last_eta_time = now
+                    last_eta_line = i + 1
+                else:
+                    last_eta = max(0.0, last_eta - (now - last_eta_time))
+                    last_eta_time = now
+                progress_cb(pct, f"{i+1}/{total}", last_eta)
+                last_pct = pct
+    else:
+        rows = list(df.itertuples(index=False, name=None))
+        with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=(pares, freq_maps)) as ex:
+            for i, linha in enumerate(ex.map(_process_row, rows, chunksize=100)):
+                linhas.append(linha)
+                now = time.time()
+                if progress_cb and (
+                    (i + 1) % 1000 == 0 or i + 1 == total or int((i + 1) * 100 / total) != last_pct
+                ):
+                    pct = int((i + 1) * 100 / total)
+                    if (i + 1) % 1000 == 0 or i + 1 == total:
+                        elapsed = now - last_eta_time
+                        lines = (i + 1) - last_eta_line
+                        avg = elapsed / lines if lines else 0
+                        last_eta = avg * (total - (i + 1))
+                        last_eta_time = now
+                        last_eta_line = i + 1
+                    else:
+                        last_eta = max(0.0, last_eta - (now - last_eta_time))
+                        last_eta_time = now
+                    progress_cb(pct, f"{i+1}/{total}", last_eta)
+                    last_pct = pct
 
     if progress_cb and last_pct < 100:
         progress_cb(100, f"{total}/{total}", 0)
