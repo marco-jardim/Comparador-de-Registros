@@ -119,17 +119,17 @@ jobs:
         run: |
           version="v${{ steps.version.outputs.version }}"
           logs="${{ steps.commits.outputs.logs }}"
+          prompt="Crie um codinome engraçado e criativo para a release $version, considerando estas mudanças:\n$logs"
           summary=$(curl -s https://api.openai.com/v1/chat/completions \
             -H "Authorization: Bearer $OPENAI_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
-              --arg version "$version" \
-              --arg logs "$logs" \
+              --arg prompt "$prompt" \
               '{
                 model: "gpt-4o-mini",
                 messages: [
                   {role: "system", content: "Você é um gerador de nomes de release engraçados e criativos, que usem o contexto das mudanças para inspirar o codinome."},
-                  {role: "user", content: "Crie um codinome engraçado e interessante para a release " + $version + ", considerando estas mudanças:\n" + $logs}
+                  {role: "user", content: $prompt}
                 ]
               }')"
           )
@@ -142,18 +142,19 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           logs="${{ steps.commits.outputs.logs }}"
+          prompt="Crie uma piada curta e engraçada sobre estas mudanças:\n$logs"
           summary=$(curl -s https://api.openai.com/v1/chat/completions \
             -H "Authorization: Bearer $OPENAI_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
-                --arg logs "$logs" \
-                '{
-                  "model": "gpt-4o-mini",
-                  "messages": [
-                    {"role":"system","content":"Você é um gerador de piadas curtas e engraçadas baseado no changelog."},
-                    {"role":"user","content":"Crie uma piada curta e engraçada sobre estas mudanças:\n" + $logs}
-                  ]
-                }')"
+              --arg prompt "$prompt" \
+             '{
+               model: "gpt-4o-mini",
+               messages: [
+                 {role: "system", content: "Você é um gerador de piadas curtas e engraçadas baseado no changelog."},
+                 {role: "user", content: $prompt}
+               ]
+             }')"
           )
           joke=$(echo "$summary" | jq -r '.choices[0].message.content')
           printf 'release_joke<<EOF\n%s\nEOF\n' "$joke" >> "$GITHUB_OUTPUT"
