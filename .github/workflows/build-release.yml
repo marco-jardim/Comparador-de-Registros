@@ -133,7 +133,8 @@ jobs:
                 ]
               }')"
           )
-          name=$(echo "$summary" | jq -r '.choices[0].message.content')
+          raw_name=$(echo "$summary" | jq -r '.choices[0].message.content')
+          name=$(echo "$raw_name" | sed -E 's/^[[:space:]]*(Codinome( da release)?:)?[[:space:]]*"?//I; s/"$//')
           printf 'release_name<<EOF\n%s\nEOF\n' "$name" >> "$GITHUB_OUTPUT"
 
       - name: Gerar release joke com curl
@@ -170,4 +171,5 @@ jobs:
 
             ${{ steps.ai_notes_curl.outputs.release_notes }}
 
+            **Piada da release:**
             ${{ steps.ai_joke_curl.outputs.release_joke }}
