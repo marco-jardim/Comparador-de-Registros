@@ -131,6 +131,9 @@ class App(tk.Tk):
         self.sep_var = tk.StringVar()
         self.sort_by_var = tk.StringVar(value="nota final")
         self.sort_order_var = tk.StringVar(value="DESC")
+        self.total_cores = os.cpu_count() or 1
+        default_workers = max(1, int(self.total_cores * 0.75))
+        self.workers_var = tk.IntVar(value=default_workers)
         self._set_default_sep()
         self._build()
 
@@ -425,9 +428,20 @@ class App(tk.Tk):
         frm_ord.grid(row=5, column=2, sticky="w")
         self._update_sort_options()
 
+        ttk.Label(self, text="Núcleos:").grid(row=6, column=0, sticky="e", padx=5, pady=2)
+        self.spin_workers = ttk.Spinbox(
+            self,
+            from_=1,
+            to=self.total_cores,
+            textvariable=self.workers_var,
+            width=5,
+        )
+        self.spin_workers.grid(row=6, column=1, sticky="w", pady=2)
+        ttk.Label(self, text=f"de {self.total_cores}").grid(row=6, column=2, sticky="w")
+
         # Botões principais
         frm_btns = ttk.Frame(self)
-        frm_btns.grid(row=6, column=0, columnspan=3, pady=10, sticky="e")
+        frm_btns.grid(row=7, column=0, columnspan=3, pady=10, sticky="e")
         btn_comp = ttk.Button(frm_btns, text="Comparar", command=self._comparar)
         btn_comp.pack(side="left", padx=5)
         ToolTip(btn_comp, "Ctrl+C")
@@ -466,6 +480,7 @@ class App(tk.Tk):
         self._resize_to_fit()
         self.sort_by_var.set("nota final")
         self.sort_order_var.set("DESC")
+        self.workers_var.set(max(1, int(self.total_cores * 0.75)))
         self._update_sort_options()
 
     def _show_help(self):
@@ -477,7 +492,8 @@ class App(tk.Tk):
             text=(
                 "1. Abra um CSV.\n"
                 "2. Escolha as colunas de referência e comparação.\n"
-                "3. Clique em Comparar para gerar o resultado.\n\n"
+                "3. Opcional: ajuste o número de núcleos.\n"
+                "4. Clique em Comparar para gerar o resultado.\n\n"
                 "Atalhos:\n"
                 "Ctrl+O – Abrir CSV\n"
                 "Ctrl+C – Comparar\n"
@@ -526,6 +542,7 @@ class App(tk.Tk):
                     progress_cb=lambda p, m, e=None: dlg.put(p, m, e),
                     sort_by=(None if self.sort_by_var.get() == "Nenhum" else self.sort_by_var.get()),
                     ascending=(self.sort_order_var.get() == "ASC"),
+                    workers=max(1, min(self.total_cores, self.workers_var.get())),
                 )
                 self.output_csv = f"{out_base}.csv"
                 dlg.put(100, "Concluído")

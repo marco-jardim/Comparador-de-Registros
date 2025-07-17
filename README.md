@@ -113,6 +113,11 @@ desmarque a opção **Formato OpenRecLink** na janela principal antes de abrir o
 O separador padrão no formato geral é a vírgula (`,`); no modo OpenRecLink,
 é o pipe (`|`).  Se preferir, altere o caractere no campo **Separador**.
 
+### 3.3 Ajuste de núcleos
+
+A caixa **Núcleos** permite definir quantos processadores serão utilizados
+no cálculo paralelo. O valor inicial corresponde a 75 % do total disponível.
+
 ---
 
 ## 4. Linha de comando (opcional/avançado)
