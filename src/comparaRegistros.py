@@ -425,6 +425,7 @@ def processar_generico(
     linhas = []
     start = time.time()
     first_line_time: float | None = None
+    last_pct = -1
     for i, (_, row) in enumerate(df.iterrows()):
         line_start = time.time()
         pontos_linha: list[str] = []
@@ -449,8 +450,13 @@ def processar_generico(
         est_total = first_line_time * total if first_line_time else 0
         eta = est_total - elapsed
         if progress_cb:
-            pct = int((i + 1) / total * 100)
-            progress_cb(pct, f"{i+1}/{total}", max(0, eta))
+            pct = int((i + 1) * 100 / total)
+            if pct != last_pct:
+                progress_cb(pct, f"{i+1}/{total}", max(0, eta))
+                last_pct = pct
+
+    if progress_cb and last_pct < 100:
+        progress_cb(100, f"{total}/{total}", 0)
 
     header_criterios: list[str] = []
     for _, _, tipo, nome in pares:
