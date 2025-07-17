@@ -64,13 +64,18 @@ class ProgressDialog(tk.Toplevel):
         self.lbl_info = ttk.Label(self, text="0%", font=(parent.font_family, 15))
         self.lbl_info.pack()
         self.start_time = time.time()
-        self.queue: queue.Queue[tuple[int, str]] = queue.Queue()
+        self.queue: queue.Queue[tuple[int, str, float | None]] = queue.Queue()
         self.after(100, self._poll)
 
     def _poll(self):
         try:
             while True:
-                pct, msg = self.queue.get_nowait()
+                item = self.queue.get_nowait()
+                if len(item) == 3:
+                    pct, msg, eta_override = item
+                else:
+                    pct, msg = item
+                    eta_override = None
                 if pct < 0:
                     # indeterminate update message only
                     self.pb.config(mode="indeterminate")
@@ -82,7 +87,11 @@ class ProgressDialog(tk.Toplevel):
                         self.pb.stop()
                         self.pb.config(mode="determinate")
                     self.pb['value'] = pct
-                    eta = (time.time() - self.start_time) * (100 - pct) / pct if pct else 0
+                    eta = (
+                        eta_override
+                        if eta_override is not None
+                        else (time.time() - self.start_time) * (100 - pct) / pct if pct else 0
+                    )
                     self.lbl_info.config(text=f"{pct}%  • ETA {int(eta)}s  {msg}")
                     if pct >= 100:
                         self.destroy()
@@ -91,8 +100,9 @@ class ProgressDialog(tk.Toplevel):
             pass
         self.after(100, self._poll)
 
-    def put(self, pct: int, msg: str = ""):
-        self.queue.put((pct, msg))
+    def put(self, pct: int, msg: str = "", eta: float | None = None):
+        """Coloca atualização de progresso na fila."""
+        self.queue.put((pct, msg, eta))
 # ============================ GUI principal ==========================================
 class App(tk.Tk):
     def __init__(self):
@@ -482,7 +492,7 @@ class App(tk.Tk):
                 tipo = widgets["tipo_var"].get() or tipo
             pares.append((idx1, idx2, tipo, c1))
         dlg = ProgressDialog(self, "Comparando registros")
-        dlg.put(-1, "Processando…")
+        dlg.put(-1, "Preparando…")
         def worker():
             try:
                 cr.processar_generico(
@@ -490,6 +500,7 @@ class App(tk.Tk):
                     out_base,
                     pares,
                     sep=self._sep(),
+                    progress_cb=lambda p, m, e=None: dlg.put(p, m, e),
                 )
                 self.output_csv = f"{out_base}.csv"
                 dlg.put(100, "Concluído")
