@@ -99,7 +99,7 @@ Instalação típica leva menos de 1 minuto.
 1. **Gerar Amostra**  → informe quantidade (ex.: `1000`)   ▶ *Gerar amostra*.
    A barra mostrará o progresso.
 2. **Comparar**  → após escolher/generar o CSV, clique **Comparar**.
-   Surgirá uma janela de progresso indeterminado; ao concluir, `saida.csv` (e `saida2.csv`) são criados.
+   Surgirá uma janela de progresso indeterminado; ao concluir, `saida.csv` é criado usando o mesmo separador do arquivo de entrada.
 
 ### 3.2 Mapeamento de colunas
 

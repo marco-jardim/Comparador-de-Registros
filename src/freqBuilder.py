@@ -44,10 +44,12 @@ def build_if_missing(
     idxs: Tuple[int, int, int, int, int, int],
     out_dir: str = ".freq_cache",
     chunksize: int = 500_000,
+    *,
+    sep: str = ";",
 ) -> List[Dict[str, int]]:
     """
     Gera (ou carrega) as 6 tabelas de frequência.
-    • csv_path  — base completa separada por ';'
+    • csv_path  — base completa separada por ``sep``
     • idxs      — (Nome1, Mae1, Nasc1, Nome2, Mae2, Nasc2)-colunas
     • out_dir   — onde gravar/ler os arquivos de frequência
     • chunksize — linhas a carregar por vez (RAM ~300 MiB/1 M linhas)
@@ -67,7 +69,7 @@ def build_if_missing(
 
     col_keep = [Nome1, Mae1, Nome2, Mae2]  # reduz memória
 
-    for chunk in pd.read_csv(csv_path, sep=";", dtype=str, chunksize=chunksize,
+    for chunk in pd.read_csv(csv_path, sep=sep, dtype=str, chunksize=chunksize,
                              usecols=col_keep):
         chunk = chunk.fillna("")
         for nome in chunk.iloc[:, 0].values:  # Nome1
@@ -86,7 +88,9 @@ def build_if_missing(
             file_path = freq_files[idx]
             # grava ordenado por freq decrescente
             pd.Series(counters[flag][parte]).sort_values(ascending=False).to_csv(
-                file_path, sep=";", header=False
+                file_path,
+                sep=sep,
+                header=False,
             )
 
     import transformaBase as tf

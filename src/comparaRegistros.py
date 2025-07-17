@@ -128,10 +128,14 @@ def _criterios_data(d1: str, d2: str) -> List[str]:
     return pontos + [DFMT(nota).replace(".", ",")]
 
 
-def processar(arquivo_entrada: str,
-              arquivo_saida : str,
-              idxs           : tuple[int, int, int, int, int, int],
-              cache_dir      : str = ".freq_cache") -> None:
+def processar(
+    arquivo_entrada: str,
+    arquivo_saida: str,
+    idxs: tuple[int, int, int, int, int, int],
+    cache_dir: str = ".freq_cache",
+    *,
+    sep: str = ";",
+) -> None:
     Nome1, Mae1, Nasc1, Nome2, Mae2, Nasc2 = idxs
     freq_paths = (
         "01_Frequencia_primeiro_nome_paciente.csv",
@@ -141,9 +145,9 @@ def processar(arquivo_entrada: str,
         "05_Frequencia_nome_do_meio_mae.csv",
         "06_Frequencia_ultimo_nome_mae.csv",
     )
-    freq_maps = fb.build_if_missing(arquivo_entrada, idxs, out_dir=cache_dir)
+    freq_maps = fb.build_if_missing(arquivo_entrada, idxs, out_dir=cache_dir, sep=sep)
 
-    df = pd.read_csv(arquivo_entrada, sep=";", dtype=str).fillna("")
+    df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
     saida_cols: list[str] = []
 
     linhas_saida = []
@@ -202,10 +206,7 @@ def processar(arquivo_entrada: str,
     header = list(df.columns) + header_criterios
     out_df = pd.DataFrame(linhas_saida, columns=header)
 
-    # ;‑separated
-    out_df.to_csv(f"{arquivo_saida}.csv", sep=";", index=False)
-    # |‑separated
-    out_df.to_csv(f"{arquivo_saida}2.csv", sep="|", index=False)
+    out_df.to_csv(f"{arquivo_saida}.csv", sep=sep, index=False)
 
 
 def _build_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> dict[str, int]:
@@ -457,5 +458,4 @@ def processar_generico(
 
     header = list(df.columns) + header_criterios
     out_df = pd.DataFrame(linhas, columns=header)
-    out_df.to_csv(f"{arquivo_saida}.csv", sep=";", index=False)
-    out_df.to_csv(f"{arquivo_saida}2.csv", sep="|", index=False)
+    out_df.to_csv(f"{arquivo_saida}.csv", sep=sep, index=False)
