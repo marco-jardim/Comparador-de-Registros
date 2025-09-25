@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal, ROUND_HALF_UP
@@ -16,6 +17,8 @@ DFMT = lambda x: format(Decimal(x).quantize(Decimal("0.00"), rounding=ROUND_HALF
 
 # Índices para saber em qual fatia da lista de frequências procurar
 PACIENTE, MAE = 0, 1
+
+_DATE_LIKE_RE = re.compile(r"^\d{8}$")
 
 # Globals used by worker processes
 _WORK_PARES: list[tuple[int, int, str, str]] = []
@@ -147,17 +150,17 @@ def _criterios_data(d1: str, d2: str) -> List[str]:
         dia1, mes1, ano1 = d1[6:], d1[4:6], d1[:4]
         dia2, mes2, ano2 = d2[6:], d2[4:6], d2[:4]
         if dia1[::-1] == dia2:         # 17
-            nota += 0.8
-            pontos[2] = "0,8"
+            nota += 1
+            pontos[2] = "1,0"
         elif mes1[::-1] == mes2:       # 18
-            nota += 0.8
-            pontos[3] = "0,8"
+            nota += 1
+            pontos[3] = "1,0"
         elif (
             util.levenshtein(ano1, ano2) == 2
             and sorted(ano1) == sorted(ano2)
         ):                             # 19
-            nota += 0.8
-            pontos[4] = "0,8"
+            nota += 1
+            pontos[4] = "1,0"
 
     return pontos + [DFMT(nota).replace(".", ",")]
 
@@ -397,15 +400,23 @@ def _criterios_str(v1: str, v2: str, freq: dict[str, int]) -> list[str]:
     nota += incr
     pontos[2] = DFMT(incr).replace(".", ",")
 
-    raros = sum(1 for p in parts1 if freq.get(p, 0) < 5)
-    incr = raros / t1
-    nota += incr
-    pontos[3] = DFMT(incr).replace(".", ",")
+    is_date_like = (
+        len(parts1) == 1
+        and len(parts2) == 1
+        and _DATE_LIKE_RE.fullmatch(parts1[0])
+        and _DATE_LIKE_RE.fullmatch(parts2[0])
+    )
 
-    comuns = sum(1 for p in parts1 if freq.get(p, 0) > 1000)
-    incr = -(comuns / t1)
-    nota += incr
-    pontos[4] = DFMT(incr).replace(".", ",")
+    if not is_date_like:
+        raros = sum(1 for p in parts1 if freq.get(p, 0) < 5)
+        incr = raros / t1
+        nota += incr
+        pontos[3] = DFMT(incr).replace(".", ",")
+
+        comuns = sum(1 for p in parts1 if freq.get(p, 0) > 1000)
+        incr = -(comuns / t1)
+        nota += incr
+        pontos[4] = DFMT(incr).replace(".", ",")
 
     parecidos = 0
     soundex_parts2 = {p2: util.soundex(p2) for p2 in parts2}  # Precompute soundex for parts2
