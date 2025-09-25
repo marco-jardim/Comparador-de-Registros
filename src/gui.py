@@ -5,7 +5,7 @@ import tkinter.font as tkfont
 from pathlib import Path
 from typing import Any
 from datetime import datetime
-import threading, queue, time, os
+import threading, queue, time, os, sys
 import pandas as pd
 
 import comparaRegistros as cr  # módulo já existente
@@ -26,8 +26,25 @@ DISPLAY_TO_TIPO = {label: code for code, label in TIPO_LABELS.items()}
 
 DEFAULT_APP_VERSION = "0.1"
 DEFAULT_APP_VERSION_DATE = "2025-09-25"
-VERSION_FILE = Path(__file__).resolve().parent.parent / "version.env"
 FOOTER_FONT_SIZE = 12
+
+
+def _find_version_file() -> Path | None:
+    candidates: list[Path] = []
+    if hasattr(sys, "_MEIPASS"):
+        candidates.append(Path(sys._MEIPASS) / "version.env")
+    module_dir = Path(__file__).resolve().parent
+    candidates.extend(
+        [
+            module_dir / "version.env",
+            module_dir.parent / "version.env",
+            Path.cwd() / "version.env",
+        ]
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -50,10 +67,12 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 def _load_version_info() -> tuple[str, str]:
     version = os.getenv("APP_VERSION") or ""
     date_str = os.getenv("APP_VERSION_DATE") or ""
-    if (not version or not date_str) and VERSION_FILE.exists():
-        env_data = _parse_env_file(VERSION_FILE)
-        version = version or env_data.get("APP_VERSION", "")
-        date_str = date_str or env_data.get("APP_VERSION_DATE", "")
+    if not version or not date_str:
+        version_file = _find_version_file()
+        if version_file:
+            env_data = _parse_env_file(version_file)
+            version = version or env_data.get("APP_VERSION", "")
+            date_str = date_str or env_data.get("APP_VERSION_DATE", "")
     version = version or DEFAULT_APP_VERSION
     date_str = date_str or DEFAULT_APP_VERSION_DATE
     return version, date_str

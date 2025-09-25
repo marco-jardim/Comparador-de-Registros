@@ -10,18 +10,19 @@ on:
     types: [closed]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+  prepare-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      date: ${{ steps.version.outputs.date }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Determine version
         id: version
-        shell: bash
         run: |
           git fetch --tags
           last=$(git tag -l 'v*' | sort -V | tail -n1)
@@ -33,6 +34,27 @@ jobs:
             ver="0.$num"
           fi
           today=$(date +%F)
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "date=$today" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare-version
+    outputs:
+      version: ${{ needs.prepare-version.outputs.version }}
+      version_date: ${{ needs.prepare-version.outputs.date }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Escrever versão
+        shell: bash
+        run: |
+          ver="${{ needs.prepare-version.outputs.version }}"
+          today="${{ needs.prepare-version.outputs.date }}"
           {
             echo "# Gerado automaticamente pelo pipeline"
             echo "APP_VERSION=$ver"
@@ -52,7 +74,14 @@ jobs:
           pip install pyinstaller -r requirements.txt
 
       - name: Build executable
-        run: pyinstaller --noconfirm --onefile src/gui.py
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ADD_DATA="version.env;."
+          else
+            ADD_DATA="version.env:."
+          fi
+          pyinstaller --noconfirm --onefile --add-data "$ADD_DATA" src/gui.py
 
       - name: Rename binary
         shell: bash
@@ -72,9 +101,14 @@ jobs:
   release:
     permissions:
       contents: write
-    needs: build
+    needs:
+      - prepare-version
+      - build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.merged == true
+    env:
+      APP_VERSION: ${{ needs.prepare-version.outputs.version }}
+      APP_VERSION_DATE: ${{ needs.prepare-version.outputs.date }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,19 +121,8 @@ jobs:
         with:
           path: artifacts
 
-      - name: Determine next version
-        id: version
-        run: |
-          git fetch --tags
-          last=$(git tag -l 'v*' | sort -V | tail -n1)
-          if [ -z "$last" ]; then
-            ver="0.1"
-          else
-            num=${last#v0.}
-            num=$((num + 1))
-            ver="0.$num"
-          fi
-          echo "version=$ver" >> "$GITHUB_OUTPUT"
+      - name: Fetch tags
+        run: git fetch --tags
 
       - name: Extrair commits desde a última tag
         id: commits
@@ -139,7 +162,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          version="v${{ steps.version.outputs.version }}"
+          version="v${{ env.APP_VERSION }}"
           logs="${{ steps.commits.outputs.logs }}"
           prompt="Crie um codinome engraçado e criativo para a release $version, considerando estas mudanças:\n$logs\n\nResponda apenas com o codinome, sem explicações extras."
           summary=$(curl -s https://api.openai.com/v1/chat/completions \
@@ -185,8 +208,8 @@ jobs:
       - name: Create release
         uses: ncipollo/release-action@v1
         with:
-          tag: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
+          tag: v${{ env.APP_VERSION }}
+          name: v${{ env.APP_VERSION }}
           artifacts: artifacts/**
           body: |
             **Codinome da release:** ${{ steps.ai_name_curl.outputs.release_name }}
