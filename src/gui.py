@@ -4,6 +4,7 @@ from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 from pathlib import Path
 from typing import Any
+from datetime import datetime
 import threading, queue, time, os
 import pandas as pd
 
@@ -23,9 +24,51 @@ TIPO_LABELS = {
 TIPO_VALUES = list(TIPO_LABELS.values())
 DISPLAY_TO_TIPO = {label: code for code, label in TIPO_LABELS.items()}
 
-APP_VERSION = "0.1"
-APP_VERSION_DATE = "25/09/2025"
+DEFAULT_APP_VERSION = "0.1"
+DEFAULT_APP_VERSION_DATE = "2025-09-25"
+VERSION_FILE = Path(__file__).resolve().parent.parent / "version.env"
 FOOTER_FONT_SIZE = 12
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    data: dict[str, str] = {}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                data[key.strip()] = value.strip()
+    except FileNotFoundError:
+        pass
+    return data
+
+
+def _load_version_info() -> tuple[str, str]:
+    version = os.getenv("APP_VERSION") or ""
+    date_str = os.getenv("APP_VERSION_DATE") or ""
+    if (not version or not date_str) and VERSION_FILE.exists():
+        env_data = _parse_env_file(VERSION_FILE)
+        version = version or env_data.get("APP_VERSION", "")
+        date_str = date_str or env_data.get("APP_VERSION_DATE", "")
+    version = version or DEFAULT_APP_VERSION
+    date_str = date_str or DEFAULT_APP_VERSION_DATE
+    return version, date_str
+
+
+def _format_version_date(date_str: str) -> str:
+    try:
+        parsed = datetime.strptime(date_str, "%Y-%m-%d")
+        return parsed.strftime("%d/%m/%Y")
+    except ValueError:
+        return date_str
+
+
+APP_VERSION, _APP_VERSION_DATE_RAW = _load_version_info()
+APP_VERSION_DATE = _format_version_date(_APP_VERSION_DATE_RAW)
 
 _LOCALIDADE_SPECIFIC_PATTERNS = (
     "cod_localidade",

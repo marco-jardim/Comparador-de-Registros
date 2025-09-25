@@ -19,6 +19,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          git fetch --tags
+          last=$(git tag -l 'v*' | sort -V | tail -n1)
+          if [ -z "$last" ]; then
+            ver="0.1"
+          else
+            num=${last#v0.}
+            num=$((num + 1))
+            ver="0.$num"
+          fi
+          today=$(date +%F)
+          {
+            echo "# Gerado automaticamente pelo pipeline"
+            echo "APP_VERSION=$ver"
+            echo "APP_VERSION_DATE=$today"
+          } > version.env
+          echo "APP_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "APP_VERSION_DATE=$today" >> "$GITHUB_ENV"
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
