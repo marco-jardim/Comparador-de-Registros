@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 from pathlib import Path
+from typing import Any
 import threading, queue, time, os
 import pandas as pd
 
@@ -10,7 +11,61 @@ import comparaRegistros as cr  # módulo já existente
 import csv
 
 # Emojis para tipos de variáveis
-EMOJIS = {"C": "🔤", "D": "📅", "N": "🔢"}
+EMOJIS = {"C": "🔤", "D": "📅", "N": "🔢", "L": "📍"}
+
+TIPO_LABELS = {
+    "": "Auto (inferido)",
+    "C": "Texto",
+    "N": "Nome",
+    "L": "Local",
+    "D": "Data",
+}
+TIPO_VALUES = list(TIPO_LABELS.values())
+DISPLAY_TO_TIPO = {label: code for code, label in TIPO_LABELS.items()}
+
+APP_VERSION = "0.1"
+APP_VERSION_DATE = "25/09/2025"
+FOOTER_FONT_SIZE = 12
+
+_LOCALIDADE_SPECIFIC_PATTERNS = (
+    "cod_localidade",
+    "codigo_localidade",
+    "codlocalidade",
+    "cod_local",
+    "codigo_local",
+    "cod_ibge",
+    "codigo_ibge",
+    "codmunicipio",
+    "cod_municipio",
+    "codigo_municipio",
+    "codmun",
+    "cod_mun",
+    "codcidade",
+    "codigo_cidade",
+)
+_LOCALIDADE_SCOPE_HINTS = ("localidade", "local", "municip", "cidade", "ibge")
+_LOCALIDADE_CODE_HINTS = ("cod", "codigo", "code", "id")
+
+
+def guess_tipo_from_name(nome: str) -> str:
+    lower = nome.strip().lower()
+    if looks_like_localidade_name(lower):
+        return "L"
+    if any(k in lower for k in ("data", "nasc", "dt")):
+        return "D"
+    return "C"
+
+
+def looks_like_localidade_name(nome_lower: str) -> bool:
+    nome_lower = nome_lower.replace(" ", "")
+    if any(p in nome_lower for p in _LOCALIDADE_SPECIFIC_PATTERNS):
+        return True
+    if (
+        any(scope in nome_lower for scope in _LOCALIDADE_SCOPE_HINTS)
+        and any(code in nome_lower for code in _LOCALIDADE_CODE_HINTS)
+    ):
+        return True
+    return False
 
 
 class ToolTip:
@@ -125,7 +180,7 @@ class App(tk.Tk):
         self.right_labels: dict[str, str] = {}
         self.label_to_left: dict[str, str] = {}
         self.label_to_right: dict[str, str] = {}
-        self.boxes: list[dict[str, any]] = []
+        self.boxes: list[dict[str, Any]] = []
         self.input_columns: list[str] = []
         self.openreclink_format = tk.BooleanVar(value=True)
         self.sep_var = tk.StringVar()
@@ -164,11 +219,11 @@ class App(tk.Tk):
     def _build_fields(self):
         self.frm_campos.columnconfigure(1, weight=1)
         self.frm_campos.columnconfigure(2, weight=1)
+        self.frm_campos.columnconfigure(3, weight=0)
         ttk.Label(self.frm_campos, text="Referência").grid(row=0, column=1, padx=5)
         ttk.Label(self.frm_campos, text="Comparação").grid(row=0, column=2, padx=5)
         self.lbl_tipo = ttk.Label(self.frm_campos, text="Tipo")
-        if not self.openreclink_format.get():
-            self.lbl_tipo.grid(row=0, column=3, padx=5)
+        self.lbl_tipo.grid(row=0, column=3, padx=5)
         btn_add = ttk.Button(self.frm_campos, text="➕", width=3, command=self._add_field)
         btn_add.grid(row=0, column=4)
         ToolTip(btn_add, "Adicionar")
@@ -177,18 +232,10 @@ class App(tk.Tk):
         self._update_tipo_widgets()
 
     def _update_tipo_widgets(self) -> None:
-        show = not self.openreclink_format.get()
-        if show:
-            self.lbl_tipo.grid(row=0, column=3, padx=5)
-        else:
-            self.lbl_tipo.grid_remove()
+        self.lbl_tipo.grid(row=0, column=3, padx=5)
         for i, widgets in enumerate(self.boxes, start=1):
-            if show:
-                widgets["frm_tipo"].grid(row=i, column=3, padx=5)
-                widgets["btn"].grid_configure(column=4)
-            else:
-                widgets["frm_tipo"].grid_remove()
-                widgets["btn"].grid_configure(column=3)
+            widgets["tipo_cb"].grid(row=i, column=3, padx=5, sticky="ew")
+            widgets["btn"].grid_configure(column=4)
 
     def _resize_to_fit(self) -> None:
         """Adjust the window height based on the number of fields."""
@@ -206,22 +253,36 @@ class App(tk.Tk):
         lbl = ttk.Label(self.frm_campos, text=f"Variável {row}:")
         cb1 = ttk.Combobox(self.frm_campos, state="readonly")
         cb2 = ttk.Combobox(self.frm_campos, state="readonly")
-        tipo_var = tk.StringVar(value="C")
-        frm_tipo = ttk.Frame(self.frm_campos)
-        ttk.Radiobutton(frm_tipo, text="Txt", variable=tipo_var, value="C").grid(row=0, column=0)
-        ttk.Radiobutton(frm_tipo, text="Nome", variable=tipo_var, value="N").grid(row=0, column=1)
-        ttk.Radiobutton(frm_tipo, text="Data", variable=tipo_var, value="D").grid(row=0, column=2)
+        tipo_var = tk.StringVar(value=TIPO_LABELS[""])
+        tipo_cb = ttk.Combobox(
+            self.frm_campos,
+            state="readonly",
+            values=TIPO_VALUES,
+            textvariable=tipo_var,
+            width=14,
+        )
+        tipo_cb.set(TIPO_LABELS[""])
         btn = ttk.Button(self.frm_campos, text="🗑", width=3)
+
         lbl.grid(row=row, column=0, sticky="w")
         cb1.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
         cb2.grid(row=row, column=2, padx=5, pady=2, sticky="ew")
-        frm_tipo.grid(row=row, column=3, padx=5)
+        tipo_cb.grid(row=row, column=3, padx=5, sticky="ew")
         btn.grid(row=row, column=4)
+
         ToolTip(btn, "Remover")
         cb1.bind("<<ComboboxSelected>>", lambda e, a=cb1, b=cb2: self._sync_pair(a, b))
-        widgets = {"lbl": lbl, "cb1": cb1, "cb2": cb2, "btn": btn,
-                   "tipo_var": tipo_var, "frm_tipo": frm_tipo}
+        widgets = {
+            "lbl": lbl,
+            "cb1": cb1,
+            "cb2": cb2,
+            "btn": btn,
+            "tipo_var": tipo_var,
+            "tipo_cb": tipo_cb,
+        }
+        tipo_cb.bind("<<ComboboxSelected>>", lambda e: self._update_sort_options())
         btn.config(command=lambda w=widgets: self._del_field(w))
+
         self.boxes.append(widgets)
         self._load_header()
         self._update_tipo_widgets()
@@ -232,7 +293,7 @@ class App(tk.Tk):
         widgets["lbl"].destroy()
         widgets["cb1"].destroy()
         widgets["cb2"].destroy()
-        widgets["frm_tipo"].destroy()
+        widgets["tipo_cb"].destroy()
         widgets["btn"].destroy()
         self.boxes.remove(widgets)
         for i, w in enumerate(self.boxes, start=1):
@@ -288,7 +349,7 @@ class App(tk.Tk):
         else:
             for idx, col in enumerate(df.columns):
                 nome = col.strip()
-                tipo = 'D' if any(k in nome.lower() for k in ('data', 'nasc', 'dt')) else 'C'
+                tipo = guess_tipo_from_name(nome)
                 label = f"{EMOJIS.get(tipo, '') + ' ' if EMOJIS.get(tipo, '') else ''}{nome}"
                 self.left_map[nome] = (idx, tipo)
                 self.right_map[nome] = (idx, tipo)
@@ -339,6 +400,13 @@ class App(tk.Tk):
                     f"{nome} dt inv mes",
                     f"{nome} dt inv ano",
                 ]
+            elif t == "L":
+                header_criterios += [
+                    f"{nome} uf igual",
+                    f"{nome} uf prox",
+                    f"{nome} local igual",
+                    f"{nome} local prox",
+                ]
             else:
                 header_criterios += [
                     f"{nome} prim frag igual",
@@ -351,6 +419,10 @@ class App(tk.Tk):
                 ]
         header_criterios.append("nota final")
         return header_criterios
+
+    def _tipo_override(self, widgets: dict[str, Any]) -> str:
+        selecionado = widgets["tipo_var"].get()
+        return DISPLAY_TO_TIPO.get(selecionado, "")
 
     def _update_sort_options(self) -> None:
         options = ["Nenhum"] + self.input_columns
@@ -366,8 +438,9 @@ class App(tk.Tk):
                 continue
             idx1, tipo = self.left_map[c1]
             idx2, _ = self.right_map[c2]
-            if not self.openreclink_format.get():
-                tipo = widgets["tipo_var"].get() or tipo
+            override = self._tipo_override(widgets)
+            if override:
+                tipo = override
             pares.append((idx1, idx2, tipo, c1))
         options += self._calc_header_criterios(pares)
         if hasattr(self, "cb_sort"):
@@ -452,6 +525,13 @@ class App(tk.Tk):
         btn_help.pack(side="left", padx=5)
         ToolTip(btn_help, "F1")
 
+        footer_text = f"Versão {APP_VERSION} — {APP_VERSION_DATE}"
+        ttk.Label(
+            self,
+            text=footer_text,
+            font=(self.font_family, FOOTER_FONT_SIZE),
+        ).grid(row=8, column=0, columnspan=3, sticky="e", padx=10, pady=(0, 8))
+
         # Atalhos de teclado
         self.bind("<Control-o>", lambda e: self._abrir_csv())
         self.bind("<Control-c>", lambda e: self._comparar())
@@ -526,8 +606,9 @@ class App(tk.Tk):
                 return
             idx1, tipo = self.left_map[c1]
             idx2, _ = self.right_map[c2]
-            if not self.openreclink_format.get():
-                tipo = widgets["tipo_var"].get() or tipo
+            override = self._tipo_override(widgets)
+            if override:
+                tipo = override
             pares.append((idx1, idx2, tipo, c1))
         self._update_sort_options()
         dlg = ProgressDialog(self, "Comparando registros")

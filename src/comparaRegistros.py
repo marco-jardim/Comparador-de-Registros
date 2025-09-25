@@ -40,12 +40,15 @@ def _process_row(row: tuple) -> list:
         v1 = util.padroniza(str(row[idx1]))
         v2 = util.padroniza(str(row[idx2]))
         t = tipo.upper()
+        freq_map = _WORK_FREQ_MAPS.get(j)
         if t == "D":
             p = _criterios_data(v1, v2)
         elif t == "N":
-            p = _criterios_nome_generico(v1, v2, _WORK_FREQ_MAPS[j])
+            p = _criterios_nome_generico(v1, v2, freq_map)
+        elif t == "L":
+            p = _criterios_localidade(v1, v2)
         else:
-            p = _criterios_str(v1, v2, _WORK_FREQ_MAPS[j])
+            p = _criterios_str(v1, v2, freq_map or {})
         pontos_linha.extend(p[:-1])
         nota_total += float(p[-1].replace(",", "."))
     pontos_linha.append(DFMT(nota_total).replace(".", ","))
@@ -161,6 +164,46 @@ def _criterios_data(d1: str, d2: str) -> List[str]:
         ):                             # 19
             nota += 1
             pontos[4] = "1,0"
+
+    return pontos + [DFMT(nota).replace(".", ",")]
+
+
+def _criterios_localidade(loc1: str, loc2: str) -> List[str]:
+    pontos = ["0,0"] * 4
+    nota = 0.0
+
+    if len(loc1) != 6 or len(loc2) != 6:
+        return pontos + ["0,0"]
+
+    uf1, cod1 = loc1[:2].upper(), loc1[2:].upper()
+    uf2, cod2 = loc2[:2].upper(), loc2[2:].upper()
+
+    if uf1 == uf2:
+        nota += 1
+        pontos[0] = "1,0"
+    else:
+        dist_uf = util.levenshtein(uf1, uf2)
+        if dist_uf == 1:
+            nota += 0.5
+            pontos[1] = "0,5"
+        elif util.soundex(uf1) == util.soundex(uf2):
+            nota += 0.3
+            pontos[1] = "0,3"
+
+    if cod1 == cod2:
+        nota += 1
+        pontos[2] = "1,0"
+    else:
+        dist_cod = util.levenshtein(cod1, cod2)
+        if dist_cod == 1:
+            nota += 0.8
+            pontos[3] = "0,8"
+        elif dist_cod == 2:
+            nota += 0.5
+            pontos[3] = "0,5"
+        elif not (cod1.isdigit() and cod2.isdigit()) and util.soundex(cod1) == util.soundex(cod2):
+            nota += 0.4
+            pontos[3] = "0,4"
 
     return pontos + [DFMT(nota).replace(".", ",")]
 
@@ -476,6 +519,8 @@ def processar_generico(
             freq_maps[i] = _build_freq_map(df, idx1, idx2)
         elif t == "N":
             freq_maps[i] = _build_name_freq_map(df, idx1, idx2)
+        elif t == "L":
+            freq_maps[i] = None
 
     linhas = []
     start = time.time()
@@ -498,12 +543,15 @@ def processar_generico(
                 v1 = util.padroniza(str(row[idx1]))
                 v2 = util.padroniza(str(row[idx2]))
                 t = tipo.upper()
+                freq_map = freq_maps.get(j)
                 if t == "D":
                     p = _criterios_data(v1, v2)
                 elif t == "N":
-                    p = _criterios_nome_generico(v1, v2, freq_maps[j])
+                    p = _criterios_nome_generico(v1, v2, freq_map)
+                elif t == "L":
+                    p = _criterios_localidade(v1, v2)
                 else:
-                    p = _criterios_str(v1, v2, freq_maps[j])
+                    p = _criterios_str(v1, v2, freq_map or {})
                 pontos_linha.extend(p[:-1])
                 nota_total += float(p[-1].replace(",", "."))
             pontos_linha.append(DFMT(nota_total).replace(".", ","))
@@ -561,6 +609,13 @@ def processar_generico(
                 f"{nome} dt inv dia",
                 f"{nome} dt inv mes",
                 f"{nome} dt inv ano",
+            ]
+        elif t == "L":
+            header_criterios += [
+                f"{nome} uf igual",
+                f"{nome} uf prox",
+                f"{nome} local igual",
+                f"{nome} local prox",
             ]
         else:
             header_criterios += [
