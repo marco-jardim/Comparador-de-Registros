@@ -1,5 +1,10 @@
 # Comparador de Registros
 
+[![Build & Release](https://github.com/marco-jardim/Comparador-de-Registros/actions/workflows/build-release.yml/badge.svg)](https://github.com/marco-jardim/Comparador-de-Registros/actions/workflows/build-release.yml)
+[![codecov](https://codecov.io/gh/marco-jardim/Comparador-de-Registros/branch/main/graph/badge.svg)](https://codecov.io/gh/marco-jardim/Comparador-de-Registros)
+![Python versions](https://img.shields.io/badge/Python-3.11%20%E2%86%923.13-blue?logo=python)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 **Comparador de Registros** é uma aplicação Python que pontua a similaridade entre registros (paciente × paciente) usando combinações de nome completo, nome da mãe e data de nascimento. A solução surgiu partir de uma base Java legada e hoje entrega:
 
 - **Interface gráfica em Tkinter** com barra de progresso e controle do número de núcleos utilizados.
@@ -84,12 +89,12 @@ Caso esteja em um ambiente com restrições e deseje o mínimo essencial, instal
 A suíte de testes usa **pytest** e cobre cenários de unidade, integração e fluxo completo.
 
 ```bash
-(.venv) pytest                 # executa tudo
+(.venv) pytest --cov=src --cov-report=term-missing
 (.venv) pytest tests/unit      # apenas unitários
 (.venv) pytest -k nomes        # filtra por expressão
 ```
 
-Os testes são executados automaticamente no GitHub Actions antes de cada build. É altamente recomendado rodá-los localmente antes de abrir um Pull Request ou gerar executáveis.
+Os testes são executados automaticamente no GitHub Actions antes de cada build e o relatório de cobertura é enviado ao Codecov. É altamente recomendado rodá-los localmente antes de abrir um Pull Request ou gerar executáveis.
 
 ---
 
