@@ -24,6 +24,8 @@ TIPO_LABELS = {
 TIPO_VALUES = list(TIPO_LABELS.values())
 DISPLAY_TO_TIPO = {label: code for code, label in TIPO_LABELS.items()}
 
+COMMON_SEPARATORS: tuple[str, ...] = ("|", ";", "\t", ",")
+
 DEFAULT_APP_VERSION = "0.1"
 DEFAULT_APP_VERSION_DATE = "2025-09-25"
 FOOTER_FONT_SIZE = 12
@@ -292,7 +294,16 @@ class App(tk.Tk):
 
     def _set_default_sep(self) -> None:
         """Atualiza ``sep_var`` conforme o formato escolhido."""
-        self.sep_var.set("|" if self.openreclink_format.get() else ",")
+        if self.openreclink_format.get():
+            if self.filepath:
+                self.sep_var.set(self._guess_sep(self.filepath, force_openrl=True))
+            else:
+                self.sep_var.set("|")
+        else:
+            if self.filepath:
+                self.sep_var.set(self._guess_sep(self.filepath, force_openrl=False))
+            else:
+                self.sep_var.set(",")
 
     def _on_format_toggle(self) -> None:
         """Callback para alternar o formato e atualizar o separador."""
@@ -304,15 +315,31 @@ class App(tk.Tk):
         """Return the column separator chosen by the user."""
         return self.sep_var.get()
 
-    def _guess_sep(self, path: str) -> str:
+    def _guess_sep(self, path: str, force_openrl: bool | None = None) -> str:
         """Detect a likely column separator for ``path``."""
+        use_openrl = self.openreclink_format.get() if force_openrl is None else force_openrl
+        if use_openrl:
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                    first_line = fh.readline()
+            except OSError:
+                return "|"
+            counts: list[tuple[int, str]] = []
+            for symbol in COMMON_SEPARATORS:
+                occurrences = first_line.count(symbol)
+                if occurrences > 0:
+                    counts.append((occurrences, symbol))
+            if counts:
+                counts.sort(key=lambda item: (item[0], COMMON_SEPARATORS.index(item[1])))
+                return counts[0][1]
+            return "|"
         try:
             with open(path, newline="") as fh:
                 sample = fh.read(2048)
-            dialect = csv.Sniffer().sniff(sample, [",", "|", ";", "\t"])
+            dialect = csv.Sniffer().sniff(sample, list(COMMON_SEPARATORS))
             return dialect.delimiter
         except Exception:
-            return self.sep_var.get()
+            return ","
 
     def _build_fields(self):
         self.frm_campos.columnconfigure(1, weight=1)
@@ -751,7 +778,7 @@ class App(tk.Tk):
             self.filepath = path
             self.e_in.delete(0, tk.END)
             self.e_in.insert(0, Path(path).name)
-            self.sep_var.set(self._guess_sep(path))
+            self._set_default_sep()
             self._load_header()
             self._update_tipo_widgets()
 
