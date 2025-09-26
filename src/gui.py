@@ -7,19 +7,21 @@ from typing import Any
 from datetime import datetime
 import threading, queue, time, os, sys
 import pandas as pd
+import re
 
 import comparaRegistros as cr  # módulo já existente
 import csv
 
 # Emojis para tipos de variáveis
-EMOJIS = {"C": "🔤", "D": "📅", "N": "🔢", "L": "📍"}
+EMOJIS = {"T": "🔤", "D": "📅", "N": "🔢", "C": "📍", "L": "🏠"}
 
 TIPO_LABELS = {
     "": "Auto (inferido)",
-    "C": "Texto",
+    "T": "Texto",
     "N": "Nome",
-    "L": "Local",
+    "C": "Cod. Local",
     "D": "Data",
+    "L": "Logradouro",
 }
 TIPO_VALUES = list(TIPO_LABELS.values())
 DISPLAY_TO_TIPO = {label: code for code, label in TIPO_LABELS.items()}
@@ -109,15 +111,38 @@ _LOCALIDADE_SPECIFIC_PATTERNS = (
 )
 _LOCALIDADE_SCOPE_HINTS = ("localidade", "local", "municip", "cidade", "ibge")
 _LOCALIDADE_CODE_HINTS = ("cod", "codigo", "code", "id")
+_LOGRADOURO_HINTS = (
+    "logradouro",
+    "endereco",
+    "endereço",
+    "avenida",
+    "av",
+    "rua",
+    "travessa",
+    "estrada",
+    "rodovia",
+    "alameda",
+    "praca",
+    "praça",
+    "largo",
+    "bairro",
+    "quadra",
+    "lote",
+    "bloco",
+    "casa",
+    "apto",
+)
 
 
 def guess_tipo_from_name(nome: str) -> str:
     lower = nome.strip().lower()
-    if looks_like_localidade_name(lower):
+    if looks_like_logradouro_name(lower):
         return "L"
+    if looks_like_localidade_name(lower):
+        return "C"
     if any(k in lower for k in ("data", "nasc", "dt")):
         return "D"
-    return "C"
+    return "T"
 
 
 def looks_like_localidade_name(nome_lower: str) -> bool:
@@ -130,6 +155,46 @@ def looks_like_localidade_name(nome_lower: str) -> bool:
     ):
         return True
     return False
+
+
+def looks_like_logradouro_name(nome_lower: str) -> bool:
+    base = nome_lower.replace("_", " ").replace("-", " ")
+    tokens = set(base.split())
+    if any(hint in nome_lower for hint in _LOGRADOURO_HINTS):
+        return True
+    return bool(tokens & {
+        "rua",
+        "avenida",
+        "av",
+        "travessa",
+        "estrada",
+        "logradouro",
+        "endereco",
+        "apto",
+        "bloco",
+        "quadra",
+        "lote",
+        "bairro",
+    })
+
+
+def normalize_tipo_code(tipo_raw: str, column_name: str) -> str:
+    code = (tipo_raw or "").strip().upper()
+    if not code:
+        return ""
+    if code == "E":
+        return "L"
+    if code == "L":
+        guess = guess_tipo_from_name(column_name)
+        if guess == "C":
+            return "C"
+        return "L"
+    if code == "C":
+        guess = guess_tipo_from_name(column_name)
+        if guess in {"C", "L"}:
+            return guess
+        return "T"
+    return code
 
 
 def _split_openreclink_column(raw: str) -> tuple[str, str] | None:
@@ -483,15 +548,17 @@ class App(tk.Tk):
             parsed = _split_openreclink_column(base)
             if parsed:
                 prefix, nome_base = parsed
+                tipo_code = normalize_tipo_code(tipo_code, nome_base)
                 if tipo_code not in EMOJIS:
                     tipo_code = guess_tipo_from_name(nome_base)
                 if tipo_code not in EMOJIS:
-                    tipo_code = 'C'
+                    tipo_code = 'T'
                 openrl_entries.append((prefix, nome_base, suffix, idx, tipo_code))
             else:
+                tipo_code = normalize_tipo_code(tipo_code, base)
                 tipo_guess = tipo_code if tipo_code in EMOJIS else guess_tipo_from_name(base)
                 if tipo_guess not in EMOJIS:
-                    tipo_guess = 'C'
+                    tipo_guess = 'T'
                 generic_entries.append((base, suffix, idx, tipo_guess))
 
         has_r = any(prefix == 'R' for prefix, *_ in openrl_entries)
@@ -534,10 +601,11 @@ class App(tk.Tk):
                 nome = parts[0]
                 suffix = ','.join(parts[1:]) if len(parts) > 1 else ''
                 tipo = parts[1].upper() if len(parts) > 1 and parts[1] else ''
+                tipo = normalize_tipo_code(tipo, nome)
                 if tipo not in EMOJIS:
                     tipo = guess_tipo_from_name(nome)
                 if tipo not in EMOJIS:
-                    tipo = 'C'
+                    tipo = 'T'
                 label = _format_column_label(nome, suffix, tipo, None)
                 self.left_map[nome] = (idx, tipo)
                 self.right_map[nome] = (idx, tipo)
@@ -633,12 +701,21 @@ class App(tk.Tk):
                     f"{nome} dt inv mes",
                     f"{nome} dt inv ano",
                 ]
-            elif t == "L":
+            elif t == "C":
                 header_criterios += [
                     f"{nome} uf igual",
                     f"{nome} uf prox",
                     f"{nome} local igual",
                     f"{nome} local prox",
+                ]
+            elif t == "L":
+                header_criterios += [
+                    f"{nome} via igual",
+                    f"{nome} via prox",
+                    f"{nome} numero igual",
+                    f"{nome} compl prox",
+                    f"{nome} texto prox",
+                    f"{nome} tokens jacc",
                 ]
             else:
                 header_criterios += [

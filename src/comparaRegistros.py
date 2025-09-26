@@ -11,6 +11,8 @@ import time
 import util
 import transformaBase as tf
 import freqBuilder as fb     # novo
+from rapidfuzz import fuzz
+from unidecode import unidecode
 
 DFMT = lambda x: format(Decimal(x).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP), "f")
 
@@ -19,6 +21,80 @@ DFMT = lambda x: format(Decimal(x).quantize(Decimal("0.00"), rounding=ROUND_HALF
 PACIENTE, MAE = 0, 1
 
 _DATE_LIKE_RE = re.compile(r"^\d{8}$")
+
+_ADDRESS_STOP_WORDS = {"de", "da", "do", "das", "dos", "e"}
+_LOGRADOURO_EQUIV = {
+    "av": "avenida",
+    "avd": "avenida",
+    "aven": "avenida",
+    "avenida": "avenida",
+    "ave": "avenida",
+    "al": "alameda",
+    "alm": "alameda",
+    "alameda": "alameda",
+    "r": "rua",
+    "rua": "rua",
+    "rod": "rodovia",
+    "rodovia": "rodovia",
+    "estr": "estrada",
+    "est": "estrada",
+    "estrada": "estrada",
+    "tv": "travessa",
+    "trav": "travessa",
+    "travessa": "travessa",
+    "pc": "praca",
+    "prac": "praca",
+    "praca": "praca",
+    "lgo": "largo",
+    "largo": "largo",
+    "vl": "vila",
+    "vila": "vila",
+    "jd": "jardim",
+    "jardim": "jardim",
+    "pq": "parque",
+    "pqe": "parque",
+    "parque": "parque",
+}
+_COMPLEMENT_EQUIV = {
+    "ap": "apto",
+    "apt": "apto",
+    "apto": "apto",
+    "apartamento": "apto",
+    "apart": "apto",
+    "bl": "bloco",
+    "blc": "bloco",
+    "bloco": "bloco",
+    "cj": "conjunto",
+    "cjto": "conjunto",
+    "conj": "conjunto",
+    "conjunto": "conjunto",
+    "sala": "sala",
+    "sl": "sala",
+    "casa": "casa",
+    "cs": "casa",
+    "andar": "andar",
+    "qd": "quadra",
+    "quadra": "quadra",
+    "lt": "lote",
+    "lote": "lote",
+    "fundos": "fundos",
+    "frente": "frente",
+    "galpao": "galpao",
+    "blocos": "bloco",
+    "box": "box",
+}
+_NUM_TOKEN_MAP = {
+    "n": "numero",
+    "no": "numero",
+    "num": "numero",
+    "numero": "numero",
+    "nro": "numero",
+    "nr": "numero",
+    "nro.": "numero",
+}
+_SEM_NUM_TOKENS = {"sn", "s", "semnumero", "sem_numero", "semn"}
+_COMPLEMENT_MARKERS = set(_COMPLEMENT_EQUIV.values()) | {"bloco", "apto", "casa", "conjunto", "quadra", "lote", "sala", "andar", "fundos", "frente", "box", "galpao"}
+_ALLOW_SINGLE_AFTER = {"bloco", "casa", "apto", "quadra", "lote", "andar", "box"}
 
 # Globals used by worker processes
 _WORK_PARES: list[tuple[int, int, str, str]] = []
@@ -45,8 +121,10 @@ def _process_row(row: tuple) -> list:
             p = _criterios_data(v1, v2)
         elif t == "N":
             p = _criterios_nome_generico(v1, v2, freq_map)
-        elif t == "L":
+        elif t == "C":
             p = _criterios_localidade(v1, v2)
+        elif t == "L":
+            p = _criterios_logradouro(v1, v2)
         else:
             p = _criterios_str(v1, v2, freq_map or {})
         pontos_linha.extend(p[:-1])
@@ -204,6 +282,165 @@ def _criterios_localidade(loc1: str, loc2: str) -> List[str]:
         elif not (cod1.isdigit() and cod2.isdigit()) and util.soundex(cod1) == util.soundex(cod2):
             nota += 0.4
             pontos[3] = "0,4"
+
+    return pontos + [DFMT(nota).replace(".", ",")]
+
+
+_RE_DIGIT_LETTER = re.compile(r"(\d+)([a-z])")
+_RE_LETTER_DIGIT = re.compile(r"([a-z])(\d+)")
+
+
+def _tokenize_logradouro(valor: str) -> list[str]:
+    if not valor:
+        return []
+    txt = unidecode(valor.lower())
+    txt = txt.replace("º", " ").replace("°", " ").replace("ª", " ")
+    txt = re.sub(r"[#'""()\[\]{}]", " ", txt)
+    txt = txt.replace("-", " ").replace("/", " ").replace("\\", " ")
+    txt = re.sub(r"[.,;:]", " ", txt)
+    txt = _RE_DIGIT_LETTER.sub(r"\1 \2", txt)
+    txt = _RE_LETTER_DIGIT.sub(r"\1 \2", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    if not txt:
+        return []
+    tokens = []
+    for raw in txt.split():
+        tok = raw.strip()
+        if not tok:
+            continue
+        tok = _NUM_TOKEN_MAP.get(tok, tok)
+        tok = _LOGRADOURO_EQUIV.get(tok, tok)
+        tok = _COMPLEMENT_EQUIV.get(tok, tok)
+        if tok in _SEM_NUM_TOKENS:
+            tok = "semnumero"
+        if tok in _ADDRESS_STOP_WORDS:
+            continue
+        tokens.append(tok)
+    return tokens
+
+
+def _normalize_logradouro(valor: str) -> dict[str, Any]:
+    tokens = _tokenize_logradouro(valor)
+    if not tokens:
+        return {
+            "via": "",
+            "via_tokens": [],
+            "numero": "",
+            "complemento": "",
+            "complemento_tokens": [],
+            "all_tokens": [],
+        }
+
+    via_tokens: list[str] = []
+    complemento_tokens: list[str] = []
+    numero = ""
+    complement_mode = False
+    last_marker: str | None = None
+
+    for tok in tokens:
+        if tok == "numero":
+            complement_mode = True
+            last_marker = None
+            continue
+        if tok == "semnumero":
+            numero = "sn"
+            complement_mode = True
+            last_marker = None
+            continue
+        if tok.isdigit():
+            val = tok.lstrip("0") or "0"
+            if not numero:
+                numero = val
+            else:
+                complemento_tokens.append(val)
+            complement_mode = True
+            last_marker = None
+            continue
+        if tok in _COMPLEMENT_MARKERS:
+            complemento_tokens.append(tok)
+            complement_mode = True
+            last_marker = tok
+            continue
+        if len(tok) == 1 and (last_marker in _ALLOW_SINGLE_AFTER or complement_mode):
+            complemento_tokens.append(tok)
+            continue
+        if complement_mode:
+            complemento_tokens.append(tok)
+        else:
+            via_tokens.append(tok)
+        last_marker = None
+
+    all_tokens: list[str] = []
+    all_tokens.extend(via_tokens)
+    if numero:
+        all_tokens.append(numero)
+    all_tokens.extend(complemento_tokens)
+
+    return {
+        "via": " ".join(via_tokens),
+        "via_tokens": via_tokens,
+        "numero": numero,
+        "complemento": " ".join(complemento_tokens),
+        "complemento_tokens": complemento_tokens,
+        "all_tokens": all_tokens,
+    }
+
+
+def _token_set_ratio(tokens1: list[str], tokens2: list[str]) -> float:
+    if not tokens1 or not tokens2:
+        return 0.0
+    return fuzz.token_set_ratio(" ".join(tokens1), " ".join(tokens2)) / 100.0
+
+
+def _jaccard_ratio(tokens1: set[str], tokens2: set[str]) -> float:
+    if not tokens1 or not tokens2:
+        return 0.0
+    inter = len(tokens1 & tokens2)
+    union = len(tokens1 | tokens2)
+    if union == 0:
+        return 0.0
+    return inter / union
+
+
+def _criterios_logradouro(v1: str, v2: str) -> list[str]:
+    dados1 = _normalize_logradouro(v1)
+    dados2 = _normalize_logradouro(v2)
+
+    pontos: list[str] = ["0,0"] * 6
+    nota = 0.0
+
+    via1, via2 = dados1["via"], dados2["via"]
+    if via1 and via1 == via2:
+        nota += 1
+        pontos[0] = "1,0"
+
+    via_ratio = _token_set_ratio(dados1["via_tokens"], dados2["via_tokens"])
+    via_score = via_ratio * 0.8
+    nota += via_score
+    pontos[1] = DFMT(via_score).replace(".", ",")
+
+    num1, num2 = dados1["numero"], dados2["numero"]
+    if num1 and num2 and num1 == num2:
+        nota += 1
+        pontos[2] = "1,0"
+    elif num1 == "sn" and num2 == "sn":
+        nota += 0.5
+        pontos[2] = "0,5"
+
+    compl_ratio = _token_set_ratio(dados1["complemento_tokens"], dados2["complemento_tokens"])
+    compl_score = compl_ratio * 0.5
+    nota += compl_score
+    pontos[3] = DFMT(compl_score).replace(".", ",")
+
+    full_ratio = _token_set_ratio(dados1["all_tokens"], dados2["all_tokens"])
+    full_score = full_ratio * 0.8
+    nota += full_score
+    pontos[4] = DFMT(full_score).replace(".", ",")
+
+    jacc = _jaccard_ratio(set(dados1["all_tokens"]), set(dados2["all_tokens"]))
+    jacc_score = jacc * 0.5
+    nota += jacc_score
+    pontos[5] = DFMT(jacc_score).replace(".", ",")
 
     return pontos + [DFMT(nota).replace(".", ",")]
 
@@ -498,8 +735,10 @@ def processar_generico(
 ) -> None:
     """Processa genericamente pares de colunas.
 
-    ``pares`` contém ``(idx1, idx2, tipo, nome)`` onde ``tipo`` é ``"C"`` para
-    strings ou ``"D"`` para datas e ``nome`` é um rótulo para os campos.
+    ``pares`` contém ``(idx1, idx2, tipo, nome)`` onde ``tipo`` é ``"T"`` para
+    strings, ``"C"`` para códigos de localidade, ``"L"`` para logradouros,
+    ``"N"`` para nomes ou ``"D"`` para datas. ``nome`` é um rótulo para os
+    campos.
     O delimitador das colunas é definido por ``sep`` (padrão ``"|"``).
 
     ``progress_cb`` recebe ``(pct, msg, eta)`` para atualizar uma barra de
@@ -515,11 +754,11 @@ def processar_generico(
     freq_maps: dict[int, any] = {}
     for i, (idx1, idx2, tipo, _) in enumerate(pares):
         t = tipo.upper()
-        if t == "C":
+        if t == "T":
             freq_maps[i] = _build_freq_map(df, idx1, idx2)
         elif t == "N":
             freq_maps[i] = _build_name_freq_map(df, idx1, idx2)
-        elif t == "L":
+        else:
             freq_maps[i] = None
 
     linhas = []
@@ -548,8 +787,10 @@ def processar_generico(
                     p = _criterios_data(v1, v2)
                 elif t == "N":
                     p = _criterios_nome_generico(v1, v2, freq_map)
-                elif t == "L":
+                elif t == "C":
                     p = _criterios_localidade(v1, v2)
+                elif t == "L":
+                    p = _criterios_logradouro(v1, v2)
                 else:
                     p = _criterios_str(v1, v2, freq_map or {})
                 pontos_linha.extend(p[:-1])
@@ -610,12 +851,21 @@ def processar_generico(
                 f"{nome} dt inv mes",
                 f"{nome} dt inv ano",
             ]
-        elif t == "L":
+        elif t == "C":
             header_criterios += [
                 f"{nome} uf igual",
                 f"{nome} uf prox",
                 f"{nome} local igual",
                 f"{nome} local prox",
+            ]
+        elif t == "L":
+            header_criterios += [
+                f"{nome} via igual",
+                f"{nome} via prox",
+                f"{nome} numero igual",
+                f"{nome} compl prox",
+                f"{nome} texto prox",
+                f"{nome} tokens jacc",
             ]
         else:
             header_criterios += [
