@@ -9,6 +9,7 @@ def test_guess_tipo_from_name_handles_patterns():
     assert gui.guess_tipo_from_name("logradouro_cliente") == "L"
     assert gui.guess_tipo_from_name("codigo_localidade") == "C"
     assert gui.guess_tipo_from_name("data_nascimento") == "D"
+    assert gui.guess_tipo_from_name("ano") == "M"
     assert gui.guess_tipo_from_name("descricao") == "T"
 
 
@@ -16,6 +17,7 @@ def test_normalize_tipo_code_resolves_conflicts():
     assert gui.normalize_tipo_code("L", "codigo_localidade") == "C"
     assert gui.normalize_tipo_code("C", "logradouro_cliente") == "L"
     assert gui.normalize_tipo_code("T", "descricao") == "T"
+    assert gui.normalize_tipo_code("T", "ano_referencia") == "M"
     assert gui.normalize_tipo_code("", "nome") == ""
 
 
@@ -70,7 +72,7 @@ def test_prepare_column_maps_openreclink_infers_pairable_columns():
 
 
 def test_prepare_column_maps_falls_back_to_generic_when_missing_pairs():
-    columns = ["Nome", "codigo_localidade", "logradouro"]
+    columns = ["Nome", "codigo_localidade", "logradouro", "ano"]
     prep = gui.prepare_column_maps(columns, True)
 
     assert prep.left_map == prep.right_map
@@ -78,6 +80,7 @@ def test_prepare_column_maps_falls_back_to_generic_when_missing_pairs():
     assert prep.pairable == set()
     assert gui.EMOJIS["C"] in prep.left_labels["codigo_localidade"]
     assert gui.EMOJIS["L"] in prep.left_labels["logradouro"]
+    assert gui.EMOJIS["M"] in prep.left_labels["ano"]
 
 
 def test_calc_header_criterios_handles_all_tipo_categories():
@@ -86,6 +89,7 @@ def test_calc_header_criterios_handles_all_tipo_categories():
         (1, 2, "C", "cod_localidade"),
         (2, 3, "L", "logradouro"),
         (3, 4, "T", "nome"),
+        (4, 5, "M", "ano_base"),
     ]
     criterios = gui.calc_header_criterios(pares)
 
@@ -93,4 +97,5 @@ def test_calc_header_criterios_handles_all_tipo_categories():
     assert "cod_localidade local prox" in criterios
     assert "logradouro texto prox" in criterios
     assert "nome qtd frag iguais" in criterios
+    assert "ano_base num prox rel" in criterios
     assert criterios[-1] == "nota final"

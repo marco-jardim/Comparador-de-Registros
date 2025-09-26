@@ -8,10 +8,12 @@ from typing import Any
 import time
 
 from comparators import (
+    build_criterios_labels,
     comparar_data,
     comparar_logradouro,
     comparar_localidade,
     comparar_nome,
+    comparar_numero,
     comparar_texto,
 )
 import freqBuilder as fb  # novo
@@ -40,8 +42,10 @@ def _process_row(row: tuple) -> list:
     pontos_linha: list[str] = []
     nota_total = 0.0
     for j, (idx1, idx2, tipo, _) in enumerate(_WORK_PARES):
-        v1 = util.padroniza(str(row[idx1]))
-        v2 = util.padroniza(str(row[idx2]))
+        raw1 = str(row[idx1])
+        raw2 = str(row[idx2])
+        v1 = util.padroniza(raw1)
+        v2 = util.padroniza(raw2)
         t = tipo.upper()
         freq_map = _WORK_FREQ_MAPS.get(j)
         if t == "D":
@@ -52,6 +56,8 @@ def _process_row(row: tuple) -> list:
             resultado = comparar_localidade(v1, v2)
         elif t == "L":
             resultado = comparar_logradouro(v1, v2)
+        elif t == "M":
+            resultado = comparar_numero(raw1, raw2)
         else:
             resultado = comparar_texto(v1, v2, freq_map or {})
         pontos_linha.extend(resultado.pontos)
@@ -253,8 +259,10 @@ def processar_generico(
             pontos_linha: list[str] = []
             nota_total = 0.0
             for j, (idx1, idx2, tipo, _) in enumerate(pares):
-                v1 = util.padroniza(str(row[idx1]))
-                v2 = util.padroniza(str(row[idx2]))
+                raw1 = str(row[idx1])
+                raw2 = str(row[idx2])
+                v1 = util.padroniza(raw1)
+                v2 = util.padroniza(raw2)
                 t = tipo.upper()
                 freq_map = freq_maps.get(j)
                 if t == "D":
@@ -265,6 +273,8 @@ def processar_generico(
                     resultado = comparar_localidade(v1, v2)
                 elif t == "L":
                     resultado = comparar_logradouro(v1, v2)
+                elif t == "M":
+                    resultado = comparar_numero(raw1, raw2)
                 else:
                     resultado = comparar_texto(v1, v2, freq_map or {})
                 pontos_linha.extend(resultado.pontos)
@@ -314,44 +324,7 @@ def processar_generico(
     if progress_cb and last_pct < 100:
         progress_cb(100, f"{total}/{total}", 0)
 
-    header_criterios: list[str] = []
-    for _, _, tipo, nome in pares:
-        t = tipo.upper()
-        if t == "D":
-            header_criterios += [
-                f"{nome} dt iguais",
-                f"{nome} dt ap 1digi",
-                f"{nome} dt inv dia",
-                f"{nome} dt inv mes",
-                f"{nome} dt inv ano",
-            ]
-        elif t == "C":
-            header_criterios += [
-                f"{nome} uf igual",
-                f"{nome} uf prox",
-                f"{nome} local igual",
-                f"{nome} local prox",
-            ]
-        elif t == "L":
-            header_criterios += [
-                f"{nome} via igual",
-                f"{nome} via prox",
-                f"{nome} numero igual",
-                f"{nome} compl prox",
-                f"{nome} texto prox",
-                f"{nome} tokens jacc",
-            ]
-        else:
-            header_criterios += [
-                f"{nome} prim frag igual",
-                f"{nome} ult frag igual",
-                f"{nome} qtd frag iguais",
-                f"{nome} qtd frag raros",
-                f"{nome} qtd frag comuns",
-                f"{nome} qtd frag muito parec",
-                f"{nome} qtd frag abrev",
-            ]
-    header_criterios.append("nota final")
+    header_criterios = build_criterios_labels(pares)
 
     header = list(df.columns) + header_criterios
     out_df = pd.DataFrame(linhas, columns=header)

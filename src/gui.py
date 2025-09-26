@@ -10,16 +10,18 @@ import threading, queue, time, os, sys
 import pandas as pd
 import re
 
+from comparators.core import build_criterios_labels
 import comparaRegistros as cr  # módulo já existente
 import csv
 
 # Emojis para tipos de variáveis
-EMOJIS = {"T": "🔤", "D": "📅", "N": "🔢", "C": "📍", "L": "🏠"}
+EMOJIS = {"T": "🔤", "D": "📅", "N": "🔢", "M": "🧮", "C": "📍", "L": "🏠"}
 
 TIPO_LABELS = {
     "": "Auto (inferido)",
     "T": "Texto",
     "N": "Nome",
+    "M": "Número",
     "C": "Cod. Local",
     "D": "Data",
     "L": "Logradouro",
@@ -164,45 +166,7 @@ def prepare_column_maps(columns: Sequence[str], openreclink_enabled: bool) -> Co
 
 
 def calc_header_criterios(pares: Sequence[tuple[int, int, str, str]]) -> list[str]:
-    header_criterios: list[str] = []
-    for _, _, tipo, nome in pares:
-        t = (tipo or "").upper()
-        if t == "D":
-            header_criterios += [
-                f"{nome} dt iguais",
-                f"{nome} dt ap 1digi",
-                f"{nome} dt inv dia",
-                f"{nome} dt inv mes",
-                f"{nome} dt inv ano",
-            ]
-        elif t == "C":
-            header_criterios += [
-                f"{nome} uf igual",
-                f"{nome} uf prox",
-                f"{nome} local igual",
-                f"{nome} local prox",
-            ]
-        elif t == "L":
-            header_criterios += [
-                f"{nome} via igual",
-                f"{nome} via prox",
-                f"{nome} numero igual",
-                f"{nome} compl prox",
-                f"{nome} texto prox",
-                f"{nome} tokens jacc",
-            ]
-        else:
-            header_criterios += [
-                f"{nome} prim frag igual",
-                f"{nome} ult frag igual",
-                f"{nome} qtd frag iguais",
-                f"{nome} qtd frag raros",
-                f"{nome} qtd frag comuns",
-                f"{nome} qtd frag muito parec",
-                f"{nome} qtd frag abrev",
-            ]
-    header_criterios.append("nota final")
-    return header_criterios
+    return build_criterios_labels(pares)
 
 
 def _find_version_file() -> Path | None:
@@ -304,6 +268,49 @@ _LOGRADOURO_HINTS = (
     "casa",
     "apto",
 )
+_NUMERIC_KEYWORDS = (
+    "ano",
+    "anos",
+    "mes",
+    "meses",
+    "dia",
+    "dias",
+    "idade",
+    "numero",
+    "num",
+    "valor",
+    "quantidade",
+    "qtd",
+    "qtde",
+    "percentual",
+    "percent",
+    "porcentagem",
+    "taxa",
+    "indice",
+    "nota",
+    "pontuacao",
+    "pontos",
+    "score",
+    "total",
+    "saldo",
+)
+_NUMERIC_PREFIXES = ("num_", "valor_", "vl_", "vlr_", "qtd_", "qtde_", "vlr", "vl")
+_NUMERIC_SUFFIXES = (
+    "_ano",
+    "_anos",
+    "_mes",
+    "_meses",
+    "_dia",
+    "_dias",
+    "_idade",
+    "_numero",
+    "_num",
+    "_valor",
+    "_quantidade",
+    "_qtd",
+    "_qtde",
+    "_total",
+)
 
 
 def guess_tipo_from_name(nome: str) -> str:
@@ -314,6 +321,8 @@ def guess_tipo_from_name(nome: str) -> str:
         return "C"
     if any(k in lower for k in ("data", "nasc", "dt")):
         return "D"
+    if looks_like_numeric_name(lower):
+        return "M"
     return "T"
 
 
@@ -350,22 +359,48 @@ def looks_like_logradouro_name(nome_lower: str) -> bool:
     })
 
 
+def looks_like_numeric_name(nome_lower: str) -> bool:
+    compact = re.sub(r"[\s_\-]", "", nome_lower)
+    if not compact:
+        return False
+    if re.fullmatch(r"[+-]?\d+", compact):
+        return True
+
+    tokens = [tok for tok in re.findall(r"[a-z]+|\d+", nome_lower) if tok]
+    if any(tok.isdigit() for tok in tokens):
+        return True
+    if any(tok in _NUMERIC_KEYWORDS for tok in tokens):
+        return True
+    if any(nome_lower.startswith(prefix) for prefix in _NUMERIC_PREFIXES):
+        return True
+    if any(nome_lower.endswith(suf) for suf in _NUMERIC_SUFFIXES):
+        return True
+    return False
+
+
 def normalize_tipo_code(tipo_raw: str, column_name: str) -> str:
     code = (tipo_raw or "").strip().upper()
     if not code:
         return ""
+    guess = guess_tipo_from_name(column_name)
     if code == "E":
         return "L"
     if code == "L":
-        guess = guess_tipo_from_name(column_name)
         if guess == "C":
             return "C"
+        if guess == "M":
+            return "M"
         return "L"
     if code == "C":
-        guess = guess_tipo_from_name(column_name)
         if guess in {"C", "L"}:
             return guess
+        if guess == "M":
+            return "M"
         return "T"
+    if code == "T" and guess == "M":
+        return "M"
+    if code == "M":
+        return "M"
     return code
 
 
