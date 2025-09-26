@@ -23,3 +23,18 @@ def test_texto_date_like_skips_frequency_penalties():
     assert float(resultado.pontos[3].replace(",", ".")) == 0.0
     assert float(resultado.pontos[4].replace(",", ".")) == 0.0
     assert resultado.nota >= 3  # primeiro, último e interseção
+
+
+def test_texto_handles_empty_inputs():
+    resultado = comparar("", "qualquer", {})
+    assert resultado.nota == 0
+    assert all(p == "0,0" for p in resultado.pontos)
+
+
+def test_texto_common_and_rare_tokens_balance():
+    freq = {"unico": 1, "comum": 5000}
+    resultado = comparar("unico comum", "comum", freq)
+    raros = float(resultado.pontos[3].replace(",", "."))
+    comuns = float(resultado.pontos[4].replace(",", "."))
+    assert raros > 0
+    assert comuns < 0

@@ -23,6 +23,18 @@ def test_comparar_data_reversed_day():
     assert resultado.nota == 1
 
 
+def test_comparar_data_reversed_month():
+    resultado = comparar_data("20211201", "20212101")
+    assert resultado.pontos[3] == "1,0"
+    assert resultado.nota == 1
+
+
+def test_comparar_data_anagrams_in_year():
+    resultado = comparar_data("20200101", "20020101")
+    assert resultado.pontos[4] == "1,0"
+    assert resultado.nota == 1
+
+
 def test_comparacao_resultado_formata_pontos():
     resultado = core.ComparacaoResultado(["0,50"], 0.5)
     assert resultado.pontos_formatados == ["0,50", "0,50"]

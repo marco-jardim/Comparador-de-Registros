@@ -23,3 +23,18 @@ def test_localidade_invalid_length_returns_zero():
     resultado = comparar("SP123", "SP1234")
     assert resultado.nota == 0
     assert all(ponto == "0,0" for ponto in resultado.pontos)
+
+
+def test_localidade_code_distance_two_scores_partial():
+    resultado = comparar("SP1234", "SP1256")
+    assert resultado.pontos[0] == "1,0"
+    assert resultado.pontos[3] == "0,5"
+    assert pytest.approx(resultado.nota, 0.001) == 1.5
+
+
+def test_localidade_code_soundex_for_non_numeric():
+    resultado = comparar("SPAXQX", "SPAZXZ")
+    # mesmos prefixos, códigos diferentes mas soundex compatível
+    assert resultado.pontos[0] == "1,0"
+    assert resultado.pontos[3] == "0,4"
+    assert resultado.nota > 1.3

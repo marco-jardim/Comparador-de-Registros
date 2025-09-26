@@ -39,3 +39,24 @@ def test_similarity_helpers():
 
 def test_tokens_to_string_skips_empty_tokens():
     assert tokens_to_string(["rua", "", "123"]) == "rua 123"
+
+
+def test_normalizar_handles_sem_numero_and_multiple_numbers():
+    normalizado = normalizar("Av Brasil s/n bloco 4 apto 501")
+    assert normalizado.numero == "sn"
+    assert "4" in normalizado.complemento_tokens
+    assert "501" in normalizado.complemento_tokens
+    assert "semnumero" not in normalizado.via_tokens
+
+
+def test_normalizar_allows_single_letter_after_marker():
+    normalizado = normalizar("Rua Alpha bloco B casa C")
+    assert "b" in normalizado.complemento_tokens
+    assert "c" in normalizado.complemento_tokens
+
+
+def test_tokenize_equivalents_and_stop_words():
+    tokens = tokenize("Rua de Teste n 123 ap 4")
+    assert "numero" in tokens
+    assert "apto" in tokens
+    assert "de" not in tokens

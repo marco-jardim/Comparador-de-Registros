@@ -2,8 +2,9 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from datetime import datetime
 import threading, queue, time, os, sys
 import pandas as pd
@@ -31,6 +32,177 @@ COMMON_SEPARATORS: tuple[str, ...] = ("|", ";", "\t", ",")
 DEFAULT_APP_VERSION = "0.1"
 DEFAULT_APP_VERSION_DATE = "2025-09-25"
 FOOTER_FONT_SIZE = 12
+
+
+@dataclass
+class ColumnPreparation:
+    left_names: list[str]
+    right_names: list[str]
+    left_map: dict[str, tuple[int, str]]
+    right_map: dict[str, tuple[int, str]]
+    left_labels: dict[str, str]
+    right_labels: dict[str, str]
+    label_to_left: dict[str, str]
+    label_to_right: dict[str, str]
+    left_origin: dict[str, str]
+    right_origin: dict[str, str]
+    pairable: set[str]
+
+
+def prepare_column_maps(columns: Sequence[str], openreclink_enabled: bool) -> ColumnPreparation:
+    left_map: dict[str, tuple[int, str]] = {}
+    right_map: dict[str, tuple[int, str]] = {}
+    left_labels: dict[str, str] = {}
+    right_labels: dict[str, str] = {}
+    label_to_left: dict[str, str] = {}
+    label_to_right: dict[str, str] = {}
+    left_origin: dict[str, str] = {}
+    right_origin: dict[str, str] = {}
+    left_names: list[str] = []
+    right_names: list[str] = []
+
+    openrl_entries: list[tuple[str, str, str, int, str]] = []
+    generic_entries: list[tuple[str, str, int, str]] = []
+    for idx, col in enumerate(columns):
+        parts = [p.strip() for p in col.split(",")]
+        base = parts[0]
+        suffix = ",".join(parts[1:]) if len(parts) > 1 else ""
+        tipo_code = parts[1].upper() if len(parts) > 1 and parts[1] else ""
+        parsed = _split_openreclink_column(base)
+        if parsed:
+            prefix, nome_base = parsed
+            tipo_code = normalize_tipo_code(tipo_code, nome_base)
+            if tipo_code not in EMOJIS:
+                tipo_code = guess_tipo_from_name(nome_base)
+            if tipo_code not in EMOJIS:
+                tipo_code = "T"
+            openrl_entries.append((prefix, nome_base, suffix, idx, tipo_code))
+        else:
+            tipo_code = normalize_tipo_code(tipo_code, base)
+            tipo_guess = tipo_code if tipo_code in EMOJIS else guess_tipo_from_name(base)
+            if tipo_guess not in EMOJIS:
+                tipo_guess = "T"
+            generic_entries.append((base, suffix, idx, tipo_guess))
+
+    has_r = any(prefix == "R" for prefix, *_ in openrl_entries)
+    has_c = any(prefix == "C" for prefix, *_ in openrl_entries)
+    use_openrl = openreclink_enabled and has_r and has_c
+
+    if use_openrl:
+        for prefix, nome, suffix, idx, tipo in openrl_entries:
+            label = _format_column_label(nome, suffix, tipo, prefix)
+            if prefix == "R":
+                left_map[nome] = (idx, tipo)
+                left_labels[nome] = label
+                label_to_left[label] = nome
+                left_names.append(label)
+                left_origin[nome] = "R"
+            else:
+                right_map[nome] = (idx, tipo)
+                right_labels[nome] = label
+                label_to_right[label] = nome
+                right_names.append(label)
+                right_origin[nome] = "C"
+
+        for nome, suffix, idx, tipo in generic_entries:
+            label = _format_column_label(nome, suffix, tipo, None)
+            if nome not in left_map:
+                left_map[nome] = (idx, tipo)
+                left_labels[nome] = label
+                label_to_left[label] = nome
+                left_names.append(label)
+                left_origin[nome] = "G"
+            if nome not in right_map:
+                right_map[nome] = (idx, tipo)
+                right_labels[nome] = label
+                label_to_right[label] = nome
+                right_names.append(label)
+                right_origin[nome] = "G"
+    else:
+        for idx, col in enumerate(columns):
+            parts = [p.strip() for p in col.split(",")]
+            nome = parts[0]
+            suffix = ",".join(parts[1:]) if len(parts) > 1 else ""
+            tipo = parts[1].upper() if len(parts) > 1 and parts[1] else ""
+            tipo = normalize_tipo_code(tipo, nome)
+            if tipo not in EMOJIS:
+                tipo = guess_tipo_from_name(nome)
+            if tipo not in EMOJIS:
+                tipo = "T"
+            label = _format_column_label(nome, suffix, tipo, None)
+            left_map[nome] = (idx, tipo)
+            right_map[nome] = (idx, tipo)
+            left_labels[nome] = label
+            right_labels[nome] = label
+            label_to_left[label] = nome
+            label_to_right[label] = nome
+            left_origin[nome] = "G"
+            right_origin[nome] = "G"
+            left_names.append(label)
+            right_names.append(label)
+
+    pair_candidates = set(left_map) & set(right_map)
+    pairable = {
+        nome
+        for nome in pair_candidates
+        if left_origin.get(nome) == "R" and right_origin.get(nome) == "C"
+    }
+
+    return ColumnPreparation(
+        left_names=left_names,
+        right_names=right_names,
+        left_map=left_map,
+        right_map=right_map,
+        left_labels=left_labels,
+        right_labels=right_labels,
+        label_to_left=label_to_left,
+        label_to_right=label_to_right,
+        left_origin=left_origin,
+        right_origin=right_origin,
+        pairable=pairable,
+    )
+
+
+def calc_header_criterios(pares: Sequence[tuple[int, int, str, str]]) -> list[str]:
+    header_criterios: list[str] = []
+    for _, _, tipo, nome in pares:
+        t = (tipo or "").upper()
+        if t == "D":
+            header_criterios += [
+                f"{nome} dt iguais",
+                f"{nome} dt ap 1digi",
+                f"{nome} dt inv dia",
+                f"{nome} dt inv mes",
+                f"{nome} dt inv ano",
+            ]
+        elif t == "C":
+            header_criterios += [
+                f"{nome} uf igual",
+                f"{nome} uf prox",
+                f"{nome} local igual",
+                f"{nome} local prox",
+            ]
+        elif t == "L":
+            header_criterios += [
+                f"{nome} via igual",
+                f"{nome} via prox",
+                f"{nome} numero igual",
+                f"{nome} compl prox",
+                f"{nome} texto prox",
+                f"{nome} tokens jacc",
+            ]
+        else:
+            header_criterios += [
+                f"{nome} prim frag igual",
+                f"{nome} ult frag igual",
+                f"{nome} qtd frag iguais",
+                f"{nome} qtd frag raros",
+                f"{nome} qtd frag comuns",
+                f"{nome} qtd frag muito parec",
+                f"{nome} qtd frag abrev",
+            ]
+    header_criterios.append("nota final")
+    return header_criterios
 
 
 def _find_version_file() -> Path | None:
@@ -503,19 +675,10 @@ class App(tk.Tk):
         self._update_sort_options()
 
     def _load_header(self):
-        left_names: list[str] = []
-        right_names: list[str] = []
         self.input_columns = []
-        self.left_map.clear()
-        self.right_map.clear()
-        self.left_labels.clear()
-        self.right_labels.clear()
-        self.label_to_left.clear()
-        self.label_to_right.clear()
-        self.left_origin.clear()
-        self.right_origin.clear()
-        self.pairable = set()
         if not self.filepath:
+            left_names: list[str] = []
+            right_names: list[str] = []
             for widgets in self.boxes:
                 cb1 = widgets["cb1"]
                 cb2 = widgets["cb2"]
@@ -529,6 +692,8 @@ class App(tk.Tk):
             df = pd.read_csv(self.filepath, sep=self._sep(), nrows=0)
         except Exception as exc:
             messagebox.showerror('Erro', f'Falha ao ler CSV:\n{exc}')
+            left_names: list[str] = []
+            right_names: list[str] = []
             for widgets in self.boxes:
                 widgets["cb1"].set("")
                 widgets["cb2"].set("")
@@ -537,92 +702,18 @@ class App(tk.Tk):
             self._update_sort_options()
             return
         self.input_columns = list(df.columns)
-        use_openrl = self.openreclink_format.get()
-        openrl_entries: list[tuple[str, str, str, int, str]] = []
-        generic_entries: list[tuple[str, str, int, str]] = []
-        for idx, col in enumerate(df.columns):
-            parts = [p.strip() for p in col.split(',')]
-            base = parts[0]
-            suffix = ','.join(parts[1:]) if len(parts) > 1 else ''
-            tipo_code = parts[1].upper() if len(parts) > 1 and parts[1] else ''
-            parsed = _split_openreclink_column(base)
-            if parsed:
-                prefix, nome_base = parsed
-                tipo_code = normalize_tipo_code(tipo_code, nome_base)
-                if tipo_code not in EMOJIS:
-                    tipo_code = guess_tipo_from_name(nome_base)
-                if tipo_code not in EMOJIS:
-                    tipo_code = 'T'
-                openrl_entries.append((prefix, nome_base, suffix, idx, tipo_code))
-            else:
-                tipo_code = normalize_tipo_code(tipo_code, base)
-                tipo_guess = tipo_code if tipo_code in EMOJIS else guess_tipo_from_name(base)
-                if tipo_guess not in EMOJIS:
-                    tipo_guess = 'T'
-                generic_entries.append((base, suffix, idx, tipo_guess))
-
-        has_r = any(prefix == 'R' for prefix, *_ in openrl_entries)
-        has_c = any(prefix == 'C' for prefix, *_ in openrl_entries)
-        use_openrl = use_openrl and has_r and has_c
-
-        if use_openrl:
-            for prefix, nome, suffix, idx, tipo in openrl_entries:
-                label = _format_column_label(nome, suffix, tipo, prefix)
-                if prefix == 'R':
-                    self.left_map[nome] = (idx, tipo)
-                    self.left_labels[nome] = label
-                    self.label_to_left[label] = nome
-                    left_names.append(label)
-                    self.left_origin[nome] = 'R'
-                else:
-                    self.right_map[nome] = (idx, tipo)
-                    self.right_labels[nome] = label
-                    self.label_to_right[label] = nome
-                    right_names.append(label)
-                    self.right_origin[nome] = 'C'
-
-            for nome, suffix, idx, tipo in generic_entries:
-                label = _format_column_label(nome, suffix, tipo, None)
-                if nome not in self.left_map:
-                    self.left_map[nome] = (idx, tipo)
-                    self.left_labels[nome] = label
-                    self.label_to_left[label] = nome
-                    left_names.append(label)
-                    self.left_origin[nome] = 'G'
-                if nome not in self.right_map:
-                    self.right_map[nome] = (idx, tipo)
-                    self.right_labels[nome] = label
-                    self.label_to_right[label] = nome
-                    right_names.append(label)
-                    self.right_origin[nome] = 'G'
-        else:
-            for idx, col in enumerate(df.columns):
-                parts = [p.strip() for p in col.split(',')]
-                nome = parts[0]
-                suffix = ','.join(parts[1:]) if len(parts) > 1 else ''
-                tipo = parts[1].upper() if len(parts) > 1 and parts[1] else ''
-                tipo = normalize_tipo_code(tipo, nome)
-                if tipo not in EMOJIS:
-                    tipo = guess_tipo_from_name(nome)
-                if tipo not in EMOJIS:
-                    tipo = 'T'
-                label = _format_column_label(nome, suffix, tipo, None)
-                self.left_map[nome] = (idx, tipo)
-                self.right_map[nome] = (idx, tipo)
-                self.left_labels[nome] = label
-                self.right_labels[nome] = label
-                self.label_to_left[label] = nome
-                self.label_to_right[label] = nome
-                self.left_origin[nome] = 'G'
-                self.right_origin[nome] = 'G'
-                left_names.append(label)
-                right_names.append(label)
-        pair_candidates = set(self.left_map) & set(self.right_map)
-        self.pairable = {
-            nome
-            for nome in pair_candidates
-            if self.left_origin.get(nome) == 'R' and self.right_origin.get(nome) == 'C'
-        }
+        preparation = prepare_column_maps(self.input_columns, self.openreclink_format.get())
+        self.left_map = preparation.left_map
+        self.right_map = preparation.right_map
+        self.left_labels = preparation.left_labels
+        self.right_labels = preparation.right_labels
+        self.label_to_left = preparation.label_to_left
+        self.label_to_right = preparation.label_to_right
+        self.left_origin = preparation.left_origin
+        self.right_origin = preparation.right_origin
+        self.pairable = preparation.pairable
+        left_names = preparation.left_names
+        right_names = preparation.right_names
         old_selections = [
             (w["cb1"].get(), w["cb2"].get()) for w in self.boxes
         ]
@@ -689,47 +780,6 @@ class App(tk.Tk):
                 return candidate
         return None
 
-    def _calc_header_criterios(self, pares) -> list[str]:
-        header_criterios: list[str] = []
-        for _, _, tipo, nome in pares:
-            t = tipo.upper()
-            if t == "D":
-                header_criterios += [
-                    f"{nome} dt iguais",
-                    f"{nome} dt ap 1digi",
-                    f"{nome} dt inv dia",
-                    f"{nome} dt inv mes",
-                    f"{nome} dt inv ano",
-                ]
-            elif t == "C":
-                header_criterios += [
-                    f"{nome} uf igual",
-                    f"{nome} uf prox",
-                    f"{nome} local igual",
-                    f"{nome} local prox",
-                ]
-            elif t == "L":
-                header_criterios += [
-                    f"{nome} via igual",
-                    f"{nome} via prox",
-                    f"{nome} numero igual",
-                    f"{nome} compl prox",
-                    f"{nome} texto prox",
-                    f"{nome} tokens jacc",
-                ]
-            else:
-                header_criterios += [
-                    f"{nome} prim frag igual",
-                    f"{nome} ult frag igual",
-                    f"{nome} qtd frag iguais",
-                    f"{nome} qtd frag raros",
-                    f"{nome} qtd frag comuns",
-                    f"{nome} qtd frag muito parec",
-                    f"{nome} qtd frag abrev",
-                ]
-        header_criterios.append("nota final")
-        return header_criterios
-
     def _tipo_override(self, widgets: dict[str, Any]) -> str:
         selecionado = widgets["tipo_var"].get()
         return DISPLAY_TO_TIPO.get(selecionado, "")
@@ -752,7 +802,7 @@ class App(tk.Tk):
             if override:
                 tipo = override
             pares.append((idx1, idx2, tipo, c1))
-        options += self._calc_header_criterios(pares)
+        options += calc_header_criterios(pares)
         if hasattr(self, "cb_sort"):
             self.cb_sort["values"] = options
             if self.sort_by_var.get() not in options:

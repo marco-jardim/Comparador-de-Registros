@@ -39,3 +39,20 @@ def test_nomes_without_frequency_maps():
     assert resultado.pontos[0] == "1,0"
     assert float(resultado.pontos[3].replace(",", ".")) == 0.0
     assert float(resultado.pontos[4].replace(",", ".")) == 0.0
+
+
+def test_nomes_blank_input_returns_zero_score():
+    resultado = comparar("", "ana", None)
+    assert resultado.nota == 0
+    assert all(ponto == "0,0" for ponto in resultado.pontos)
+
+
+def test_nomes_common_name_penalty_applies():
+    freq_maps = (
+        {"ana": 5000},
+        {"maria": 4000},
+        {"silva": 8000},
+    )
+    resultado = comparar("ana maria silva", "ana maria silva", freq_maps)
+    comuns_penalidade = float(resultado.pontos[4].replace(",", "."))
+    assert comuns_penalidade < 0

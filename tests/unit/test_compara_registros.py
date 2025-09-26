@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+
 from decimal import Decimal
 
 import pandas as pd
+import pytest  # type: ignore
 
 import comparaRegistros as cr
 
@@ -70,3 +72,52 @@ def test_process_row_aggregates_scores():
     assert len(pontos) == 8  # 7 pontos do comparador + nota final
     nota_final = Decimal(pontos[-1].replace(",", "."))
     assert nota_final > 1
+
+
+def test_processar_generico_with_progress_and_workers(tmp_path):
+    df = pd.DataFrame(
+        {
+            "nome_a": ["Ana Silva", "Carlos Souza"],
+            "nome_b": ["Ana Silva", "Carla Souza"],
+            "data_a": ["19900101", "19850505"],
+            "data_b": ["19900101", "19860505"],
+        }
+    )
+    entrada = tmp_path / "entrada.csv"
+    df.to_csv(entrada, sep="|", index=False)
+
+    updates: list[tuple[int, str]] = []
+
+    def progress(pct: int, msg: str, *_):
+        updates.append((pct, msg))
+
+    cr.processar_generico(
+        str(entrada),
+        str(tmp_path / "saida"),
+        [
+            (0, 1, "N", "Paciente"),
+            (2, 3, "D", "Nascimento"),
+        ],
+        sep="|",
+        progress_cb=progress,
+        workers=0,
+    )
+
+    saida = tmp_path / "saida.csv"
+    assert saida.exists()
+    assert any(pct == 100 for pct, _ in updates)
+
+
+def test_processar_generico_invalid_sort_column(tmp_path):
+    df = pd.DataFrame({"nome_a": ["Ana"], "nome_b": ["Ana"]})
+    entrada = tmp_path / "entrada.csv"
+    df.to_csv(entrada, sep="|", index=False)
+
+    with pytest.raises(ValueError):
+        cr.processar_generico(
+            str(entrada),
+            str(tmp_path / "saida"),
+            [(0, 1, "T", "Campo")],
+            sep="|",
+            sort_by="inexistente",
+        )
