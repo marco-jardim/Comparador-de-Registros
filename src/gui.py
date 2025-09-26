@@ -130,6 +130,39 @@ def looks_like_localidade_name(nome_lower: str) -> bool:
     return False
 
 
+def _split_openreclink_column(raw: str) -> tuple[str, str] | None:
+    """Return (prefix, base) if *raw* follows the OpenRecLink pattern."""
+    head = raw.split(",", 1)[0].strip()
+    if not head:
+        return None
+    if "_" in head:
+        prefix, rest = head.split("_", 1)
+    else:
+        prefix, rest = head[:1], head[1:]
+    prefix = prefix.upper()
+    if prefix in {"R", "C"} and rest:
+        return prefix, rest
+    return None
+
+
+def _base_without_prefix(raw: str) -> str:
+    """Return the column base name ignoring OpenRecLink prefixes."""
+    head = raw.split(",", 1)[0].strip()
+    parsed = _split_openreclink_column(head)
+    if parsed:
+        return parsed[1]
+    return head
+
+
+def _format_column_label(base: str, suffix: str, tipo: str, prefix_hint: str | None) -> str:
+    """Compose a human-friendly label with emoji, optional side hint and suffix."""
+    core = base if not suffix else f"{base},{suffix}"
+    if prefix_hint:
+        core = f"{prefix_hint}·{core}"
+    emoji = EMOJIS.get(tipo.upper(), "")
+    return f"{emoji + ' ' if emoji else ''}{core}"
+
+
 class ToolTip:
     def __init__(self, widget: tk.Widget, text: str):
         self.widget = widget
@@ -333,7 +366,14 @@ class App(tk.Tk):
         btn.grid(row=row, column=4)
 
         ToolTip(btn, "Remover")
-        cb1.bind("<<ComboboxSelected>>", lambda e, a=cb1, b=cb2: self._sync_pair(a, b))
+        cb1.bind(
+            "<<ComboboxSelected>>",
+            lambda e, a=cb1, b=cb2: (self._sync_pair(a, b), self._update_sort_options()),
+        )
+        cb2.bind(
+            "<<ComboboxSelected>>",
+            lambda e, a=cb1, b=cb2: (self._sync_pair_reverse(a, b), self._update_sort_options()),
+        )
         widgets = {
             "lbl": lbl,
             "cb1": cb1,
@@ -385,34 +425,68 @@ class App(tk.Tk):
         left_names: list[str] = []
         right_names: list[str] = []
         use_openrl = self.openreclink_format.get()
-        if use_openrl and not self._is_openreclink_header(df.columns):
-            use_openrl = False
+        openrl_entries: list[tuple[str, str, str, int, str]] = []
+        generic_entries: list[tuple[str, str, int, str]] = []
+        for idx, col in enumerate(df.columns):
+            parts = [p.strip() for p in col.split(',')]
+            base = parts[0]
+            suffix = ','.join(parts[1:]) if len(parts) > 1 else ''
+            tipo_code = parts[1].upper() if len(parts) > 1 and parts[1] else ''
+            parsed = _split_openreclink_column(base)
+            if parsed:
+                prefix, nome_base = parsed
+                if tipo_code not in EMOJIS:
+                    tipo_code = guess_tipo_from_name(nome_base)
+                if tipo_code not in EMOJIS:
+                    tipo_code = 'C'
+                openrl_entries.append((prefix, nome_base, suffix, idx, tipo_code))
+            else:
+                tipo_guess = tipo_code if tipo_code in EMOJIS else guess_tipo_from_name(base)
+                if tipo_guess not in EMOJIS:
+                    tipo_guess = 'C'
+                generic_entries.append((base, suffix, idx, tipo_guess))
+
+        has_r = any(prefix == 'R' for prefix, *_ in openrl_entries)
+        has_c = any(prefix == 'C' for prefix, *_ in openrl_entries)
+        use_openrl = use_openrl and has_r and has_c
+
         if use_openrl:
-            for idx, col in enumerate(df.columns):
-                parts = col.split(',')
-                base = parts[0]
-                tipo = parts[1] if len(parts) > 1 else 'C'
-                if '_' in base:
-                    prefix, nome = base.split('_', 1)
-                else:
-                    prefix, nome = base[0], base[1:]
-                emoji = EMOJIS.get(tipo.upper(), '')
-                label = f"{emoji + ' ' if emoji else ''}{nome}"
+            for prefix, nome, suffix, idx, tipo in openrl_entries:
+                label = _format_column_label(nome, suffix, tipo, prefix)
                 if prefix == 'R':
                     self.left_map[nome] = (idx, tipo)
                     self.left_labels[nome] = label
                     self.label_to_left[label] = nome
                     left_names.append(label)
-                elif prefix == 'C':
+                else:
+                    self.right_map[nome] = (idx, tipo)
+                    self.right_labels[nome] = label
+                    self.label_to_right[label] = nome
+                    right_names.append(label)
+
+            for nome, suffix, idx, tipo in generic_entries:
+                label = _format_column_label(nome, suffix, tipo, None)
+                if nome not in self.left_map:
+                    self.left_map[nome] = (idx, tipo)
+                    self.left_labels[nome] = label
+                    self.label_to_left[label] = nome
+                    left_names.append(label)
+                if nome not in self.right_map:
                     self.right_map[nome] = (idx, tipo)
                     self.right_labels[nome] = label
                     self.label_to_right[label] = nome
                     right_names.append(label)
         else:
             for idx, col in enumerate(df.columns):
-                nome = col.strip()
-                tipo = guess_tipo_from_name(nome)
-                label = f"{EMOJIS.get(tipo, '') + ' ' if EMOJIS.get(tipo, '') else ''}{nome}"
+                parts = [p.strip() for p in col.split(',')]
+                nome = parts[0]
+                suffix = ','.join(parts[1:]) if len(parts) > 1 else ''
+                tipo = parts[1].upper() if len(parts) > 1 and parts[1] else ''
+                if tipo not in EMOJIS:
+                    tipo = guess_tipo_from_name(nome)
+                if tipo not in EMOJIS:
+                    tipo = 'C'
+                label = _format_column_label(nome, suffix, tipo, None)
                 self.left_map[nome] = (idx, tipo)
                 self.right_map[nome] = (idx, tipo)
                 self.left_labels[nome] = label
@@ -434,21 +508,51 @@ class App(tk.Tk):
         self._update_sort_options()
 
     def _is_openreclink_header(self, cols: list[str]) -> bool:
-        """Return True if all columns start with R_ or C prefix."""
+        """Return True if the header contains both R_ and C_ style columns."""
+        has_r = has_c = False
         for col in cols:
-            base = col.split(',')[0]
-            if '_' in base:
-                prefix = base.split('_', 1)[0]
-            else:
-                prefix = base[:1]
-            if prefix not in ('R', 'C'):
-                return False
-        return True
+            base = col.split(',')[0].strip()
+            parsed = _split_openreclink_column(base)
+            if not parsed:
+                continue
+            prefix, _ = parsed
+            if prefix == 'R':
+                has_r = True
+            elif prefix == 'C':
+                has_c = True
+        return has_r and has_c
 
     def _sync_pair(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
         nome = self.label_to_left.get(cb_left.get(), cb_left.get())
-        if nome in self.right_labels:
-            cb_right.set(self.right_labels[nome])
+        desired_key = self._find_pair_key(nome, self.right_map)
+        if desired_key:
+            desired = self.right_labels.get(desired_key)
+            if desired and cb_right.get() != desired:
+                cb_right.set(desired)
+                self._update_sort_options()
+
+    def _sync_pair_reverse(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
+        nome = self.label_to_right.get(cb_right.get(), cb_right.get())
+        desired_key = self._find_pair_key(nome, self.left_map)
+        if desired_key:
+            desired = self.left_labels.get(desired_key)
+            if desired and cb_left.get() != desired:
+                cb_left.set(desired)
+                self._update_sort_options()
+
+    def _find_pair_key(self, nome: str, target_map: dict[str, tuple[int, str]]) -> str | None:
+        base = _base_without_prefix(nome)
+        if nome in target_map:
+            for candidate in target_map:
+                if candidate == nome:
+                    continue
+                if _base_without_prefix(candidate) == base:
+                    return candidate
+            return nome
+        for candidate in target_map:
+            if _base_without_prefix(candidate) == base:
+                return candidate
+        return None
 
     def _calc_header_criterios(self, pares) -> list[str]:
         header_criterios: list[str] = []
