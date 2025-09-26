@@ -73,7 +73,7 @@ Finalize com `deactivate` quando quiser sair do ambiente virtual.
 (.venv) pip install -r requirements.txt
 ```
 
-> ℹ️ O arquivo `requirements.txt` é gerado via `pip freeze`, portanto inclui tanto dependências necessárias em produção (pandas, RapidFuzz, python-Levenshtein, Unidecode, Jellyfish) quanto ferramentas usadas pela suíte de testes e notebooks (pytest, ipykernel, etc.). Todas são instaladas automaticamente para reproduzir fielmente o ambiente usado na integração contínua.
+> ℹ️ O arquivo `requirements.txt` lista apenas as dependências realmente usadas pelo projeto (pandas, RapidFuzz, python-Levenshtein, Jellyfish, Unidecode e pytest). Outras bibliotecas de suporte são dependências transitivas instaladas automaticamente pelo `pip`.
 
 Caso esteja em um ambiente com restrições e deseje o mínimo essencial, instale manualmente `pandas`, `RapidFuzz`, `python-Levenshtein`, `Unidecode` e `jellyfish`. O código faz fallback para implementações Python puras quando esses aceleradores não estiverem disponíveis, porém com processamento mais lento.
 
