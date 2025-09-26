@@ -1,18 +1,21 @@
 from __future__ import annotations
+
 import os
-import re
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal, ROUND_HALF_UP
-from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any
 import time
 
+from comparators import (
+    comparar_data,
+    comparar_logradouro,
+    comparar_localidade,
+    comparar_nome,
+    comparar_texto,
+)
+import freqBuilder as fb  # novo
 import util
-import transformaBase as tf
-import freqBuilder as fb     # novo
-from rapidfuzz import fuzz
-from unidecode import unidecode
 
 DFMT = lambda x: format(Decimal(x).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP), "f")
 
@@ -20,85 +23,9 @@ DFMT = lambda x: format(Decimal(x).quantize(Decimal("0.00"), rounding=ROUND_HALF
 # Índices para saber em qual fatia da lista de frequências procurar
 PACIENTE, MAE = 0, 1
 
-_DATE_LIKE_RE = re.compile(r"^\d{8}$")
-
-_ADDRESS_STOP_WORDS = {"de", "da", "do", "das", "dos", "e"}
-_LOGRADOURO_EQUIV = {
-    "av": "avenida",
-    "avd": "avenida",
-    "aven": "avenida",
-    "avenida": "avenida",
-    "ave": "avenida",
-    "al": "alameda",
-    "alm": "alameda",
-    "alameda": "alameda",
-    "r": "rua",
-    "rua": "rua",
-    "rod": "rodovia",
-    "rodovia": "rodovia",
-    "estr": "estrada",
-    "est": "estrada",
-    "estrada": "estrada",
-    "tv": "travessa",
-    "trav": "travessa",
-    "travessa": "travessa",
-    "pc": "praca",
-    "prac": "praca",
-    "praca": "praca",
-    "lgo": "largo",
-    "largo": "largo",
-    "vl": "vila",
-    "vila": "vila",
-    "jd": "jardim",
-    "jardim": "jardim",
-    "pq": "parque",
-    "pqe": "parque",
-    "parque": "parque",
-}
-_COMPLEMENT_EQUIV = {
-    "ap": "apto",
-    "apt": "apto",
-    "apto": "apto",
-    "apartamento": "apto",
-    "apart": "apto",
-    "bl": "bloco",
-    "blc": "bloco",
-    "bloco": "bloco",
-    "cj": "conjunto",
-    "cjto": "conjunto",
-    "conj": "conjunto",
-    "conjunto": "conjunto",
-    "sala": "sala",
-    "sl": "sala",
-    "casa": "casa",
-    "cs": "casa",
-    "andar": "andar",
-    "qd": "quadra",
-    "quadra": "quadra",
-    "lt": "lote",
-    "lote": "lote",
-    "fundos": "fundos",
-    "frente": "frente",
-    "galpao": "galpao",
-    "blocos": "bloco",
-    "box": "box",
-}
-_NUM_TOKEN_MAP = {
-    "n": "numero",
-    "no": "numero",
-    "num": "numero",
-    "numero": "numero",
-    "nro": "numero",
-    "nr": "numero",
-    "nro.": "numero",
-}
-_SEM_NUM_TOKENS = {"sn", "s", "semnumero", "sem_numero", "semn"}
-_COMPLEMENT_MARKERS = set(_COMPLEMENT_EQUIV.values()) | {"bloco", "apto", "casa", "conjunto", "quadra", "lote", "sala", "andar", "fundos", "frente", "box", "galpao"}
-_ALLOW_SINGLE_AFTER = {"bloco", "casa", "apto", "quadra", "lote", "andar", "box"}
-
 # Globals used by worker processes
 _WORK_PARES: list[tuple[int, int, str, str]] = []
-_WORK_FREQ_MAPS: dict[int, any] = {}
+_WORK_FREQ_MAPS: dict[int, Any] = {}
 
 
 def _init_worker(pares, freq_maps):
@@ -118,331 +45,35 @@ def _process_row(row: tuple) -> list:
         t = tipo.upper()
         freq_map = _WORK_FREQ_MAPS.get(j)
         if t == "D":
-            p = _criterios_data(v1, v2)
+            resultado = comparar_data(v1, v2)
         elif t == "N":
-            p = _criterios_nome_generico(v1, v2, freq_map)
+            resultado = comparar_nome(v1, v2, freq_map)
         elif t == "C":
-            p = _criterios_localidade(v1, v2)
+            resultado = comparar_localidade(v1, v2)
         elif t == "L":
-            p = _criterios_logradouro(v1, v2)
+            resultado = comparar_logradouro(v1, v2)
         else:
-            p = _criterios_str(v1, v2, freq_map or {})
-        pontos_linha.extend(p[:-1])
-        nota_total += float(p[-1].replace(",", "."))
+            resultado = comparar_texto(v1, v2, freq_map or {})
+        pontos_linha.extend(resultado.pontos)
+        nota_total += resultado.nota
     pontos_linha.append(DFMT(nota_total).replace(".", ","))
     return list(row) + pontos_linha
 
 
-def _criterios_nome(nome1: str, nome2: str,
-                    freq_maps: List[Dict[str, int]], flag: int) -> List[str]:
-    pontos: List[str] = ["0,0"] * 7
-    nota = 0.0
+def _comparar_nome_flag(
+    nome1: str,
+    nome2: str,
+    freq_maps: list[dict[str, int]] | None,
+    flag: int,
+):
+    if not freq_maps:
+        return comparar_nome(nome1, nome2, None)
 
-    parts1 = nome1.split()
-    parts2 = nome2.split()
-    t1 = len(parts1)
-
-    # 1 / 8 – Primeiro fragmento igual
-    if parts1[0] == parts2[0]:
-        nota += 1
-        pontos[0] = "1,0"
-
-    # 2 / 9 – Último fragmento igual
-    if parts1[-1] == parts2[-1]:
-        nota += 1
-        pontos[1] = "1,0"
-
-    # 3 / 10 – Quantidade de fragmentos iguais
-    inter = sum(1 for f in parts1 if f in parts2)
-    incr = inter / t1
-    nota += incr
-    pontos[2] = DFMT(incr).replace(".", ",")
-
-    # Mapas de frequência (0‑2 pac, 3‑5 mãe)
-    first, middle, last = (
-        freq_maps[0 + 3 * flag],
-        freq_maps[1 + 3 * flag],
-        freq_maps[2 + 3 * flag],
-    )
-
-    # 4 / 11 – Fragmentos raros (< 5 ocorrências)
-    raros = 0
-    if first.get(parts1[0], 0) < 5:
-        raros += 1
-    for p in parts1[1:-1]:
-        if middle.get(p, 0) < 5:
-            raros += 1
-    if last.get(parts1[-1], 0) < 5:
-        raros += 1
-    incr = raros / t1
-    nota += incr
-    pontos[3] = DFMT(incr).replace(".", ",")
-
-    # 5 / 12 – Fragmentos comuns (> 1000)
-    comuns = 0
-    if first.get(parts1[0], 0) > 1000:
-        comuns += 1
-    for p in parts1[1:-1]:
-        if middle.get(p, 0) > 1000:
-            comuns += 1
-    if last.get(parts1[-1], 0) > 1000:
-        comuns += 1
-    incr = -(comuns / t1)
-    nota += incr
-    pontos[4] = DFMT(incr).replace(".", ",")
-
-    # 6 / 13 – Fragmentos muito parecidos (≥ 3 dígitos iguais no Soundex)
-    parecidos = 0
-    for p1 in parts1:
-        s1 = util.soundex(p1)
-        if any(sum(c1 == c2 for c1, c2 in zip(s1, util.soundex(p2))) >= 3 for p2 in parts2):
-            parecidos += 1
-    incr = (parecidos / t1) * 0.8
-    nota += incr
-    pontos[5] = DFMT(incr).replace(".", ",")
-
-    # 7 / 14 – Abreviações compatíveis
-    abrevs = 0
-    for p1 in parts1:
-        if len(p1) == 1 and any(p2.startswith(p1) for p2 in parts2):
-            abrevs += 1
-    for p2 in parts2:
-        if len(p2) == 1 and any(p1.startswith(p2) for p1 in parts1):
-            abrevs += 1
-    incr = (abrevs / t1) * 0.5
-    nota += incr
-    pontos[6] = DFMT(incr).replace(".", ",")
-
-    return pontos + [DFMT(nota).replace(".", ",")]
-
-
-def _criterios_data(d1: str, d2: str) -> List[str]:
-    pontos = ["0,0"] * 5
-    nota = 0.0
-
-    if d1 == d2:               # 15
-        nota += 1
-        pontos[0] = "1,0"
-    dist = util.levenshtein(d1, d2)
-    if dist == 1:              # 16
-        nota += 1
-        pontos[1] = "1,0"
-    elif dist == 2:
-        dia1, mes1, ano1 = d1[6:], d1[4:6], d1[:4]
-        dia2, mes2, ano2 = d2[6:], d2[4:6], d2[:4]
-        if dia1[::-1] == dia2:         # 17
-            nota += 1
-            pontos[2] = "1,0"
-        elif mes1[::-1] == mes2:       # 18
-            nota += 1
-            pontos[3] = "1,0"
-        elif (
-            util.levenshtein(ano1, ano2) == 2
-            and sorted(ano1) == sorted(ano2)
-        ):                             # 19
-            nota += 1
-            pontos[4] = "1,0"
-
-    return pontos + [DFMT(nota).replace(".", ",")]
-
-
-def _criterios_localidade(loc1: str, loc2: str) -> List[str]:
-    pontos = ["0,0"] * 4
-    nota = 0.0
-
-    if len(loc1) != 6 or len(loc2) != 6:
-        return pontos + ["0,0"]
-
-    uf1, cod1 = loc1[:2].upper(), loc1[2:].upper()
-    uf2, cod2 = loc2[:2].upper(), loc2[2:].upper()
-
-    if uf1 == uf2:
-        nota += 1
-        pontos[0] = "1,0"
-    else:
-        dist_uf = util.levenshtein(uf1, uf2)
-        if dist_uf == 1:
-            nota += 0.5
-            pontos[1] = "0,5"
-        elif util.soundex(uf1) == util.soundex(uf2):
-            nota += 0.3
-            pontos[1] = "0,3"
-
-    if cod1 == cod2:
-        nota += 1
-        pontos[2] = "1,0"
-    else:
-        dist_cod = util.levenshtein(cod1, cod2)
-        if dist_cod == 1:
-            nota += 0.8
-            pontos[3] = "0,8"
-        elif dist_cod == 2:
-            nota += 0.5
-            pontos[3] = "0,5"
-        elif not (cod1.isdigit() and cod2.isdigit()) and util.soundex(cod1) == util.soundex(cod2):
-            nota += 0.4
-            pontos[3] = "0,4"
-
-    return pontos + [DFMT(nota).replace(".", ",")]
-
-
-_RE_DIGIT_LETTER = re.compile(r"(\d+)([a-z])")
-_RE_LETTER_DIGIT = re.compile(r"([a-z])(\d+)")
-
-
-def _tokenize_logradouro(valor: str) -> list[str]:
-    if not valor:
-        return []
-    txt = unidecode(valor.lower())
-    txt = txt.replace("º", " ").replace("°", " ").replace("ª", " ")
-    txt = re.sub(r"[#'""()\[\]{}]", " ", txt)
-    txt = txt.replace("-", " ").replace("/", " ").replace("\\", " ")
-    txt = re.sub(r"[.,;:]", " ", txt)
-    txt = _RE_DIGIT_LETTER.sub(r"\1 \2", txt)
-    txt = _RE_LETTER_DIGIT.sub(r"\1 \2", txt)
-    txt = re.sub(r"\s+", " ", txt).strip()
-    if not txt:
-        return []
-    tokens = []
-    for raw in txt.split():
-        tok = raw.strip()
-        if not tok:
-            continue
-        tok = _NUM_TOKEN_MAP.get(tok, tok)
-        tok = _LOGRADOURO_EQUIV.get(tok, tok)
-        tok = _COMPLEMENT_EQUIV.get(tok, tok)
-        if tok in _SEM_NUM_TOKENS:
-            tok = "semnumero"
-        if tok in _ADDRESS_STOP_WORDS:
-            continue
-        tokens.append(tok)
-    return tokens
-
-
-def _normalize_logradouro(valor: str) -> dict[str, Any]:
-    tokens = _tokenize_logradouro(valor)
-    if not tokens:
-        return {
-            "via": "",
-            "via_tokens": [],
-            "numero": "",
-            "complemento": "",
-            "complemento_tokens": [],
-            "all_tokens": [],
-        }
-
-    via_tokens: list[str] = []
-    complemento_tokens: list[str] = []
-    numero = ""
-    complement_mode = False
-    last_marker: str | None = None
-
-    for tok in tokens:
-        if tok == "numero":
-            complement_mode = True
-            last_marker = None
-            continue
-        if tok == "semnumero":
-            numero = "sn"
-            complement_mode = True
-            last_marker = None
-            continue
-        if tok.isdigit():
-            val = tok.lstrip("0") or "0"
-            if not numero:
-                numero = val
-            else:
-                complemento_tokens.append(val)
-            complement_mode = True
-            last_marker = None
-            continue
-        if tok in _COMPLEMENT_MARKERS:
-            complemento_tokens.append(tok)
-            complement_mode = True
-            last_marker = tok
-            continue
-        if len(tok) == 1 and (last_marker in _ALLOW_SINGLE_AFTER or complement_mode):
-            complemento_tokens.append(tok)
-            continue
-        if complement_mode:
-            complemento_tokens.append(tok)
-        else:
-            via_tokens.append(tok)
-        last_marker = None
-
-    all_tokens: list[str] = []
-    all_tokens.extend(via_tokens)
-    if numero:
-        all_tokens.append(numero)
-    all_tokens.extend(complemento_tokens)
-
-    return {
-        "via": " ".join(via_tokens),
-        "via_tokens": via_tokens,
-        "numero": numero,
-        "complemento": " ".join(complemento_tokens),
-        "complemento_tokens": complemento_tokens,
-        "all_tokens": all_tokens,
-    }
-
-
-def _token_set_ratio(tokens1: list[str], tokens2: list[str]) -> float:
-    if not tokens1 or not tokens2:
-        return 0.0
-    return fuzz.token_set_ratio(" ".join(tokens1), " ".join(tokens2)) / 100.0
-
-
-def _jaccard_ratio(tokens1: set[str], tokens2: set[str]) -> float:
-    if not tokens1 or not tokens2:
-        return 0.0
-    inter = len(tokens1 & tokens2)
-    union = len(tokens1 | tokens2)
-    if union == 0:
-        return 0.0
-    return inter / union
-
-
-def _criterios_logradouro(v1: str, v2: str) -> list[str]:
-    dados1 = _normalize_logradouro(v1)
-    dados2 = _normalize_logradouro(v2)
-
-    pontos: list[str] = ["0,0"] * 6
-    nota = 0.0
-
-    via1, via2 = dados1["via"], dados2["via"]
-    if via1 and via1 == via2:
-        nota += 1
-        pontos[0] = "1,0"
-
-    via_ratio = _token_set_ratio(dados1["via_tokens"], dados2["via_tokens"])
-    via_score = via_ratio * 0.8
-    nota += via_score
-    pontos[1] = DFMT(via_score).replace(".", ",")
-
-    num1, num2 = dados1["numero"], dados2["numero"]
-    if num1 and num2 and num1 == num2:
-        nota += 1
-        pontos[2] = "1,0"
-    elif num1 == "sn" and num2 == "sn":
-        nota += 0.5
-        pontos[2] = "0,5"
-
-    compl_ratio = _token_set_ratio(dados1["complemento_tokens"], dados2["complemento_tokens"])
-    compl_score = compl_ratio * 0.5
-    nota += compl_score
-    pontos[3] = DFMT(compl_score).replace(".", ",")
-
-    full_ratio = _token_set_ratio(dados1["all_tokens"], dados2["all_tokens"])
-    full_score = full_ratio * 0.8
-    nota += full_score
-    pontos[4] = DFMT(full_score).replace(".", ",")
-
-    jacc = _jaccard_ratio(set(dados1["all_tokens"]), set(dados2["all_tokens"]))
-    jacc_score = jacc * 0.5
-    nota += jacc_score
-    pontos[5] = DFMT(jacc_score).replace(".", ",")
-
-    return pontos + [DFMT(nota).replace(".", ",")]
+    inicio = flag * 3
+    subset = freq_maps[inicio : inicio + 3]
+    if len(subset) < 3:
+        return comparar_nome(nome1, nome2, None)
+    return comparar_nome(nome1, nome2, subset)
 
 
 def processar(
@@ -456,18 +87,9 @@ def processar(
     ascending: bool = False,
 ) -> None:
     Nome1, Mae1, Nasc1, Nome2, Mae2, Nasc2 = idxs
-    freq_paths = (
-        "01_Frequencia_primeiro_nome_paciente.csv",
-        "02_Frequencia_nome_do_meio_paciente.csv",
-        "03_Frequencia_ultimo_nome_paciente.csv",
-        "04_Frequencia_primeiro_nome_mae.csv",
-        "05_Frequencia_nome_do_meio_mae.csv",
-        "06_Frequencia_ultimo_nome_mae.csv",
-    )
     freq_maps = fb.build_if_missing(arquivo_entrada, idxs, out_dir=cache_dir, sep=sep)
 
     df = pd.read_csv(arquivo_entrada, sep=sep, dtype=str).fillna("")
-    saida_cols: list[str] = []
 
     linhas_saida = []
     for _, row in df.iterrows():
@@ -480,21 +102,21 @@ def processar(
         m2 = util.padroniza(row.iloc[Mae2])
         d2 = str(row.iloc[Nasc2])
 
-        pontos: List[str] = ["0,0"] * 20  # 0..18 + nota final no 19
+        pontos: list[str] = ["0,0"] * 20  # 0..18 + nota final no 19
         nota_total = 0.0
 
         if n1 and n2:
-            p = _criterios_nome(n1, n2, freq_maps, PACIENTE)
-            pontos[0:7] = p[:-1]
-            nota_total += float(p[-1].replace(",", "."))
+            resultado = _comparar_nome_flag(n1, n2, freq_maps, PACIENTE)
+            pontos[0:7] = resultado.pontos
+            nota_total += resultado.nota
         if m1 and m2:
-            p = _criterios_nome(m1, m2, freq_maps, MAE)
-            pontos[7:14] = p[:-1]
-            nota_total += float(p[-1].replace(",", "."))
+            resultado = _comparar_nome_flag(m1, m2, freq_maps, MAE)
+            pontos[7:14] = resultado.pontos
+            nota_total += resultado.nota
         if len(d1) == 8 and len(d2) == 8:
-            p = _criterios_data(d1, d2)
-            pontos[14:19] = p[:-1]
-            nota_total += float(p[-1].replace(",", "."))
+            resultado = comparar_data(d1, d2)
+            pontos[14:19] = resultado.pontos
+            nota_total += resultado.nota
 
         pontos[19] = DFMT(nota_total).replace(".", ",")
 
@@ -574,154 +196,6 @@ def _build_name_freq_map(df: pd.DataFrame, idx1: int, idx2: int) -> list[dict[st
     return [first, middle, last]
 
 
-def _criterios_nome_generico(v1: str, v2: str, freq_maps: list[dict[str, int]]) -> list[str]:
-    """
-    Compare two names and calculate similarity scores based on frequency maps.
-
-    Args:
-        v1 (str): The first name to compare.
-        v2 (str): The second name to compare.
-        freq_maps (list[dict[str, int]]): A list of frequency maps for first, middle, and last name parts.
-
-    Returns:
-        list[str]: A list of similarity scores as strings, with the final score appended at the end.
-    """
-    pontos: list[str] = ["0,0"] * 7
-    nota = 0.0
-
-    parts1 = v1.split()
-    parts2 = v2.split()
-    if not parts1 or not parts2:
-        return pontos + ["0,0"]
-
-    t1 = len(parts1)
-    if parts1[0] == parts2[0]:
-        nota += 1
-        pontos[0] = "1,0"
-    if parts1[-1] == parts2[-1]:
-        nota += 1
-        pontos[1] = "1,0"
-
-    inter = sum(1 for f in parts1 if f in parts2)
-    incr = inter / t1
-    nota += incr
-    pontos[2] = DFMT(incr).replace(".", ",")
-
-    first, middle, last = freq_maps
-    raros = 0
-    if first.get(parts1[0], 0) < 5:
-        raros += 1
-    for p in parts1[1:-1]:
-        if middle.get(p, 0) < 5:
-            raros += 1
-    if last.get(parts1[-1], 0) < 5:
-        raros += 1
-    incr = raros / t1
-    nota += incr
-    pontos[3] = DFMT(incr).replace(".", ",")
-
-    comuns = 0
-    if first.get(parts1[0], 0) > 1000:
-        comuns += 1
-    for p in parts1[1:-1]:
-        if middle.get(p, 0) > 1000:
-            comuns += 1
-    if last.get(parts1[-1], 0) > 1000:
-        comuns += 1
-    incr = -(comuns / t1)
-    nota += incr
-    pontos[4] = DFMT(incr).replace(".", ",")
-
-    parecidos = 0
-    for p1 in parts1:
-        s1 = util.soundex(p1)
-        if any(sum(c1 == c2 for c1, c2 in zip(s1, util.soundex(p2))) >= 3 for p2 in parts2):
-            parecidos += 1
-    incr = (parecidos / t1) * 0.8
-    nota += incr
-    pontos[5] = DFMT(incr).replace(".", ",")
-
-    abrevs = 0
-    for p1 in parts1:
-        if len(p1) == 1 and any(p2.startswith(p1) for p2 in parts2):
-            abrevs += 1
-    for p2 in parts2:
-        if len(p2) == 1 and any(p1.startswith(p2) for p1 in parts1):
-            abrevs += 1
-    incr = (abrevs / t1) * 0.5
-    nota += incr
-    pontos[6] = DFMT(incr).replace(".", ",")
-
-    return pontos + [DFMT(nota).replace(".", ",")]
-
-
-def _criterios_str(v1: str, v2: str, freq: dict[str, int]) -> list[str]:
-    """Avalia dois textos utilizando critérios similares aos de nome."""
-    pontos: list[str] = ["0,0"] * 7
-    nota = 0.0
-
-    parts1 = v1.split()
-    parts2 = v2.split()
-    if not parts1 or not parts2:
-        return pontos + ["0,0"]
-
-    t1 = len(parts1)
-
-    if parts1[0] == parts2[0]:
-        nota += 1
-        pontos[0] = "1,0"
-
-    if parts1[-1] == parts2[-1]:
-        nota += 1
-        pontos[1] = "1,0"
-
-    inter = sum(1 for f in parts1 if f in parts2)
-    incr = inter / t1
-    nota += incr
-    pontos[2] = DFMT(incr).replace(".", ",")
-
-    is_date_like = (
-        len(parts1) == 1
-        and len(parts2) == 1
-        and _DATE_LIKE_RE.fullmatch(parts1[0])
-        and _DATE_LIKE_RE.fullmatch(parts2[0])
-    )
-
-    if not is_date_like:
-        raros = sum(1 for p in parts1 if freq.get(p, 0) < 5)
-        incr = raros / t1
-        nota += incr
-        pontos[3] = DFMT(incr).replace(".", ",")
-
-        comuns = sum(1 for p in parts1 if freq.get(p, 0) > 1000)
-        incr = -(comuns / t1)
-        nota += incr
-        pontos[4] = DFMT(incr).replace(".", ",")
-
-    parecidos = 0
-    soundex_parts2 = {p2: util.soundex(p2) for p2 in parts2}  # Precompute soundex for parts2
-    for p1 in parts1:
-        s1 = util.soundex(p1)
-        if any(sum(c1 == c2 for c1, c2 in zip(s1, soundex_parts2[p2])) >= 3 for p2 in parts2):
-            parecidos += 1
-    incr = (parecidos / t1) * 0.8
-    nota += incr
-    pontos[5] = DFMT(incr).replace(".", ",")
-
-    abrevs = 0
-    for p1 in parts1:
-        if len(p1) == 1 and any(p2.startswith(p1) for p2 in parts2):
-            abrevs += 1
-    for p2 in parts2:
-        if len(p2) == 1 and any(p1.startswith(p2) for p1 in parts1):
-            abrevs += 1
-    incr = (abrevs / t1) * 0.5
-    nota += incr
-    pontos[6] = DFMT(incr).replace(".", ",")
-
-    return pontos + [DFMT(nota).replace(".", ",")]
-
-
 def processar_generico(
     arquivo_entrada: str,
     arquivo_saida: str,
@@ -751,7 +225,7 @@ def processar_generico(
     if progress_cb:
         progress_cb(0, f"0/{total}")
 
-    freq_maps: dict[int, any] = {}
+    freq_maps: dict[int, Any] = {}
     for i, (idx1, idx2, tipo, _) in enumerate(pares):
         t = tipo.upper()
         if t == "T":
@@ -784,17 +258,17 @@ def processar_generico(
                 t = tipo.upper()
                 freq_map = freq_maps.get(j)
                 if t == "D":
-                    p = _criterios_data(v1, v2)
+                    resultado = comparar_data(v1, v2)
                 elif t == "N":
-                    p = _criterios_nome_generico(v1, v2, freq_map)
+                    resultado = comparar_nome(v1, v2, freq_map)
                 elif t == "C":
-                    p = _criterios_localidade(v1, v2)
+                    resultado = comparar_localidade(v1, v2)
                 elif t == "L":
-                    p = _criterios_logradouro(v1, v2)
+                    resultado = comparar_logradouro(v1, v2)
                 else:
-                    p = _criterios_str(v1, v2, freq_map or {})
-                pontos_linha.extend(p[:-1])
-                nota_total += float(p[-1].replace(",", "."))
+                    resultado = comparar_texto(v1, v2, freq_map or {})
+                pontos_linha.extend(resultado.pontos)
+                nota_total += resultado.nota
             pontos_linha.append(DFMT(nota_total).replace(".", ","))
             linhas.append(list(row) + pontos_linha)
             now = time.time()
