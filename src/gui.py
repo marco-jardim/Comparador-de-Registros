@@ -275,6 +275,9 @@ class App(tk.Tk):
         self.right_labels: dict[str, str] = {}
         self.label_to_left: dict[str, str] = {}
         self.label_to_right: dict[str, str] = {}
+        self.left_origin: dict[str, str] = {}
+        self.right_origin: dict[str, str] = {}
+        self.pairable: set[str] = set()
         self.boxes: list[dict[str, Any]] = []
         self.input_columns: list[str] = []
         self.openreclink_format = tk.BooleanVar(value=True)
@@ -408,22 +411,40 @@ class App(tk.Tk):
         self._update_sort_options()
 
     def _load_header(self):
-        if not self.filepath:
-            return
-        try:
-            df = pd.read_csv(self.filepath, sep=self._sep(), nrows=0)
-        except Exception as exc:
-            messagebox.showerror('Erro', f'Falha ao ler CSV:\n{exc}')
-            return
-        self.input_columns = list(df.columns)
+        left_names: list[str] = []
+        right_names: list[str] = []
+        self.input_columns = []
         self.left_map.clear()
         self.right_map.clear()
         self.left_labels.clear()
         self.right_labels.clear()
         self.label_to_left.clear()
         self.label_to_right.clear()
-        left_names: list[str] = []
-        right_names: list[str] = []
+        self.left_origin.clear()
+        self.right_origin.clear()
+        self.pairable = set()
+        if not self.filepath:
+            for widgets in self.boxes:
+                cb1 = widgets["cb1"]
+                cb2 = widgets["cb2"]
+                cb1["values"] = left_names
+                cb2["values"] = right_names
+                cb1.set("")
+                cb2.set("")
+            self._update_sort_options()
+            return
+        try:
+            df = pd.read_csv(self.filepath, sep=self._sep(), nrows=0)
+        except Exception as exc:
+            messagebox.showerror('Erro', f'Falha ao ler CSV:\n{exc}')
+            for widgets in self.boxes:
+                widgets["cb1"].set("")
+                widgets["cb2"].set("")
+                widgets["cb1"]["values"] = left_names
+                widgets["cb2"]["values"] = right_names
+            self._update_sort_options()
+            return
+        self.input_columns = list(df.columns)
         use_openrl = self.openreclink_format.get()
         openrl_entries: list[tuple[str, str, str, int, str]] = []
         generic_entries: list[tuple[str, str, int, str]] = []
@@ -458,11 +479,13 @@ class App(tk.Tk):
                     self.left_labels[nome] = label
                     self.label_to_left[label] = nome
                     left_names.append(label)
+                    self.left_origin[nome] = 'R'
                 else:
                     self.right_map[nome] = (idx, tipo)
                     self.right_labels[nome] = label
                     self.label_to_right[label] = nome
                     right_names.append(label)
+                    self.right_origin[nome] = 'C'
 
             for nome, suffix, idx, tipo in generic_entries:
                 label = _format_column_label(nome, suffix, tipo, None)
@@ -471,11 +494,13 @@ class App(tk.Tk):
                     self.left_labels[nome] = label
                     self.label_to_left[label] = nome
                     left_names.append(label)
+                    self.left_origin[nome] = 'G'
                 if nome not in self.right_map:
                     self.right_map[nome] = (idx, tipo)
                     self.right_labels[nome] = label
                     self.label_to_right[label] = nome
                     right_names.append(label)
+                    self.right_origin[nome] = 'G'
         else:
             for idx, col in enumerate(df.columns):
                 parts = [p.strip() for p in col.split(',')]
@@ -493,8 +518,16 @@ class App(tk.Tk):
                 self.right_labels[nome] = label
                 self.label_to_left[label] = nome
                 self.label_to_right[label] = nome
+                self.left_origin[nome] = 'G'
+                self.right_origin[nome] = 'G'
                 left_names.append(label)
                 right_names.append(label)
+        pair_candidates = set(self.left_map) & set(self.right_map)
+        self.pairable = {
+            nome
+            for nome in pair_candidates
+            if self.left_origin.get(nome) == 'R' and self.right_origin.get(nome) == 'C'
+        }
         old_selections = [
             (w["cb1"].get(), w["cb2"].get()) for w in self.boxes
         ]
@@ -530,6 +563,12 @@ class App(tk.Tk):
             if desired and cb_right.get() != desired:
                 cb_right.set(desired)
                 self._update_sort_options()
+        else:
+            current = self.label_to_right.get(cb_right.get(), cb_right.get())
+            if current and _base_without_prefix(current) == _base_without_prefix(nome):
+                if cb_right.get():
+                    cb_right.set("")
+                    self._update_sort_options()
 
     def _sync_pair_reverse(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
         nome = self.label_to_right.get(cb_right.get(), cb_right.get())
@@ -539,16 +578,17 @@ class App(tk.Tk):
             if desired and cb_left.get() != desired:
                 cb_left.set(desired)
                 self._update_sort_options()
+        else:
+            current = self.label_to_left.get(cb_left.get(), cb_left.get())
+            if current and _base_without_prefix(current) == _base_without_prefix(nome):
+                if cb_left.get():
+                    cb_left.set("")
+                    self._update_sort_options()
 
     def _find_pair_key(self, nome: str, target_map: dict[str, tuple[int, str]]) -> str | None:
         base = _base_without_prefix(nome)
-        if nome in target_map:
-            for candidate in target_map:
-                if candidate == nome:
-                    continue
-                if _base_without_prefix(candidate) == base:
-                    return candidate
-            return nome
+        if base not in self.pairable:
+            return None
         for candidate in target_map:
             if _base_without_prefix(candidate) == base:
                 return candidate
