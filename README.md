@@ -5,11 +5,20 @@
 ![Python versions](https://img.shields.io/badge/Python-3.11%20%E2%86%923.13-blue?logo=python)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-**Comparador de Registros** é uma aplicação Python que pontua a similaridade entre registros (paciente × paciente) usando combinações de nome completo, nome da mãe e data de nascimento. A solução surgiu partir de uma base Java legada e hoje entrega:
+**Comparador de Registros** é uma ferramenta Python focada em deduplicação e vinculação probabilística de bases cadastrais – especialmente em contextos de saúde pública, assistência social e cadastros massivos – onde inconsistências de grafia, abreviações e datas trocadas comprometem a análise de dados.
 
-- **Interface gráfica em Tkinter** com barra de progresso e controle do número de núcleos utilizados.
-- **Comparadores especializados** (texto, datas, nomes, logradouro) com uso automático das bibliotecas mais rápidas disponíveis.
-- **Pipeline de testes e build automatizado** que distribui executáveis multi-plataforma via GitHub Actions.
+**Motivações principais**
+
+- Reduzir falsos negativos ao comparar registros que parecem diferentes, mas representam a mesma pessoa.
+- Tornar reprodutível um processo que antes dependia de planilhas manuais e macros difíceis de manter.
+- Oferecer resultados rastreáveis, com pontuação explicável e colunas auxiliares que justificam cada nota.
+
+**Funcionalidades de destaque**
+
+- **Interface gráfica interativa (Tkinter)** com barra de progresso, escolha de separador, número de núcleos e mapeamento rápido das colunas relevantes.
+- **Comparadores especializados** para nomes, datas, localidades, logradouros e campos textuais, aproveitando bibliotecas otimizadas (RapidFuzz, python-Levenshtein, Jellyfish) com fallback automático para ambientes restritos.
+- **Cache e construção incremental de frequências**, permitindo reaproveitar estatísticas de grandes bases e acelerar execuções subsequentes.
+- **Suíte completa de testes (unitária, integração e funcional)** e pipeline GitHub Actions que executa `pytest`, calcula cobertura e empacota executáveis multiplataforma com PyInstaller.
 
 > 🗂️ **Estrutura do repositório (resumo)**
 >
