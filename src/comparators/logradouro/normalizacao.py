@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -218,7 +219,18 @@ def token_set_ratio(tokens1: Iterable[str], tokens2: Iterable[str]) -> float:
     list1, list2 = list(tokens1), list(tokens2)
     if not list1 or not list2:
         return 0.0
-    return fuzz.token_set_ratio(" ".join(list1), " ".join(list2)) / 100.0
+
+    base_score = fuzz.token_set_ratio(" ".join(list1), " ".join(list2)) / 100.0
+
+    counter1 = Counter(list1)
+    counter2 = Counter(list2)
+    intersection = sum((counter1 & counter2).values())
+    max_len = max(len(list1), len(list2))
+    if max_len == 0:
+        return 0.0
+
+    coverage = intersection / max_len
+    return base_score * coverage
 
 
 def jaccard_ratio(tokens1: Iterable[str], tokens2: Iterable[str]) -> float:
