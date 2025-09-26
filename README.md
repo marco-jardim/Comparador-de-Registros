@@ -7,6 +7,10 @@
 
 **Comparador de Registros** é uma ferramenta Python focada em deduplicação e vinculação probabilística de bases cadastrais – especialmente em contextos de saúde pública, assistência social e cadastros massivos – onde inconsistências de grafia, abreviações e datas trocadas comprometem a análise de dados.
 
+<p align="center">
+	<a href="app.png"><img src="app.png" alt="App screenshot"></a>
+</p>
+
 **Motivações principais**
 
 - Reduzir falsos negativos ao comparar registros que parecem diferentes, mas representam a mesma pessoa.
