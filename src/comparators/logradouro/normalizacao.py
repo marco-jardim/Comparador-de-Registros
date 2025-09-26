@@ -4,7 +4,22 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from rapidfuzz import fuzz
+try:
+    from rapidfuzz import fuzz
+except ImportError:  # pragma: no cover - fallback quando rapidfuzz não estiver disponível
+    import difflib
+
+    class _Fuzz:
+        @staticmethod
+        def token_set_ratio(str1: str, str2: str) -> float:
+            tokens1 = " ".join(sorted(str1.split()))
+            tokens2 = " ".join(sorted(str2.split()))
+            if not tokens1 or not tokens2:
+                return 0.0
+            return difflib.SequenceMatcher(None, tokens1, tokens2).ratio() * 100.0
+
+    fuzz = _Fuzz()
+
 from unidecode import unidecode
 
 from comparators.utils import tokens_to_string
