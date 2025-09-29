@@ -51,6 +51,16 @@ class ColumnPreparation:
     pairable: set[str]
 
 
+def _resolve_prefix_type(nome: str, origin: str | None) -> tuple[str, str | None]:
+    parsed = _split_openreclink_column(nome)
+    if parsed:
+        prefix, base = parsed
+        return base, prefix
+    if origin in {"R", "C"}:
+        return nome, origin
+    return nome, None
+
+
 def prepare_column_maps(columns: Sequence[str], openreclink_enabled: bool) -> ColumnPreparation:
     left_map: dict[str, tuple[int, str]] = {}
     right_map: dict[str, tuple[int, str]] = {}
@@ -143,11 +153,21 @@ def prepare_column_maps(columns: Sequence[str], openreclink_enabled: bool) -> Co
             left_names.append(label)
             right_names.append(label)
 
-    pair_candidates = set(left_map) & set(right_map)
+    left_prefixes: dict[str, set[str]] = {}
+    for nome in left_map:
+        base, prefix = _resolve_prefix_type(nome, left_origin.get(nome))
+        if prefix:
+            left_prefixes.setdefault(base, set()).add(prefix)
+    right_prefixes: dict[str, set[str]] = {}
+    for nome in right_map:
+        base, prefix = _resolve_prefix_type(nome, right_origin.get(nome))
+        if prefix:
+            right_prefixes.setdefault(base, set()).add(prefix)
+
     pairable = {
-        nome
-        for nome in pair_candidates
-        if left_origin.get(nome) == "R" and right_origin.get(nome) == "C"
+        base
+        for base in set(left_prefixes) & set(right_prefixes)
+        if "R" in left_prefixes.get(base, set()) and "C" in right_prefixes.get(base, set())
     }
 
     return ColumnPreparation(
@@ -784,12 +804,6 @@ class App(tk.Tk):
             if desired and cb_right.get() != desired:
                 cb_right.set(desired)
                 self._update_sort_options()
-        else:
-            current = self.label_to_right.get(cb_right.get(), cb_right.get())
-            if current and _base_without_prefix(current) == _base_without_prefix(nome):
-                if cb_right.get():
-                    cb_right.set("")
-                    self._update_sort_options()
 
     def _sync_pair_reverse(self, cb_left: ttk.Combobox, cb_right: ttk.Combobox) -> None:
         nome = self.label_to_right.get(cb_right.get(), cb_right.get())
@@ -799,12 +813,6 @@ class App(tk.Tk):
             if desired and cb_left.get() != desired:
                 cb_left.set(desired)
                 self._update_sort_options()
-        else:
-            current = self.label_to_left.get(cb_left.get(), cb_left.get())
-            if current and _base_without_prefix(current) == _base_without_prefix(nome):
-                if cb_left.get():
-                    cb_left.set("")
-                    self._update_sort_options()
 
     def _find_pair_key(self, nome: str, target_map: dict[str, tuple[int, str]]) -> str | None:
         base = _base_without_prefix(nome)

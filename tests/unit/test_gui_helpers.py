@@ -99,3 +99,103 @@ def test_calc_header_criterios_handles_all_tipo_categories():
     assert "nome qtd frag iguais" in criterios
     assert "ano_base num prox rel" in criterios
     assert criterios[-1] == "nota final"
+
+
+class DummyCombo:
+    def __init__(self, value: str = "") -> None:
+        self._value = value
+
+    def get(self) -> str:
+        return self._value
+
+    def set(self, value: str) -> None:
+        self._value = value
+
+
+class PairHarness:
+    def __init__(self) -> None:
+        self.label_to_left = {"R Nome": "Nome"}
+        self.label_to_right = {"C Nome": "Nome", "C Outro": "Outro"}
+        self.left_labels = {"Nome": "R Nome"}
+        self.right_labels = {"Nome": "C Nome", "Outro": "C Outro"}
+        self.left_map = {"Nome": (0, "T"), "Outro": (1, "T")}
+        self.right_map = {"Nome": (0, "T"), "Outro": (1, "T")}
+        self.pairable = {"Nome"}
+        self._update_calls = 0
+
+    def _update_sort_options(self) -> None:  # pragma: no cover - simple counter
+        self._update_calls += 1
+
+    def _find_pair_key(self, nome: str, target_map: dict[str, tuple[int, str]]) -> str | None:
+        return gui.App._find_pair_key(self, nome, target_map)
+
+
+def test_sync_pair_keeps_correlated_selection_when_manual_reverse():
+    harness = PairHarness()
+    cb_left = DummyCombo("R Nome")
+    cb_right = DummyCombo("C Nome")
+
+    gui.App._sync_pair_reverse(harness, cb_left, cb_right)
+
+    assert cb_left.get() == "R Nome"
+    assert cb_right.get() == "C Nome"
+
+
+def test_sync_pair_autofills_cod_local_labels():
+    harness = PairHarness()
+    harness.label_to_left = {"📍 R·cod_localidade": "cod_localidade"}
+    harness.label_to_right = {"📍 C·cod_localidade": "cod_localidade"}
+    harness.left_labels = {"cod_localidade": "📍 R·cod_localidade"}
+    harness.right_labels = {"cod_localidade": "📍 C·cod_localidade"}
+    harness.left_map = {"cod_localidade": (0, "C")}
+    harness.right_map = {"cod_localidade": (1, "C")}
+    harness.pairable = {"cod_localidade"}
+
+    cb_left = DummyCombo("📍 R·cod_localidade")
+    cb_right = DummyCombo("")
+
+    gui.App._sync_pair(harness, cb_left, cb_right)
+
+    assert cb_right.get() == "📍 C·cod_localidade"
+
+
+def test_prepare_column_maps_normalizes_pairable_for_prefixed_columns():
+    columns = ["R_CODMUNRES", "C_CODMUNRES"]
+    prep = gui.prepare_column_maps(columns, False)
+
+    assert prep.pairable == {"CODMUNRES"}
+
+
+def test_sync_pair_respects_generic_labels_without_prefix():
+    harness = PairHarness()
+    harness.label_to_left = {"Nome": "Nome"}
+    harness.label_to_right = {"Nome": "Nome"}
+    harness.left_labels = {"Nome": "Nome"}
+    harness.right_labels = {"Nome": "Nome"}
+    harness.left_map = {"Nome": (0, "T")}
+    harness.right_map = {"Nome": (0, "T")}
+    harness.pairable = {"Nome"}
+
+    cb_left = DummyCombo("Nome")
+    cb_right = DummyCombo("Nome")
+
+    gui.App._sync_pair(harness, cb_left, cb_right)
+    gui.App._sync_pair_reverse(harness, cb_left, cb_right)
+
+    assert cb_left.get() == "Nome"
+    assert cb_right.get() == "Nome"
+
+
+def test_sync_pair_leaves_unmatched_selection_untouched():
+    harness = PairHarness()
+    harness.label_to_right = {"C Outro": "Outro"}
+    harness.right_labels = {"Outro": "C Outro"}
+    harness.right_map = {"Outro": (0, "T")}
+    harness.pairable = set()
+
+    cb_left = DummyCombo("R Nome")
+    cb_right = DummyCombo("C Outro")
+
+    gui.App._sync_pair(harness, cb_left, cb_right)
+
+    assert cb_right.get() == "C Outro"
