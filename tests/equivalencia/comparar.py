@@ -40,6 +40,11 @@ def localizar_jdk() -> tuple[Path, Path] | None:
     return None
 
 
+def fontes_legado() -> list[Path]:
+    diretorio = ROOT / os.environ.get("CDR_LEGADO_DIR", "legado/src/principal")
+    return sorted(diretorio.glob("*.java"))
+
+
 def executar(command: list[str], cwd: Path = ROOT) -> str:
     result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, errors="replace", check=True)
     output = result.stdout + result.stderr
@@ -86,7 +91,7 @@ def rodar(destino: Path, sublotes=("ascii", "acentos"), classes: Path | None = N
     paths = gerar(destino)
     classes = classes or destino / "classes"
     classes.mkdir(parents=True, exist_ok=True)
-    fontes = sorted((ROOT / "legado/src/principal").glob("*.java"))
+    fontes = fontes_legado()
     avisos = executar([str(javac), "-encoding", "ISO-8859-1", "-d", str(classes),
                        *map(str, fontes), str(HERE / "java/HarnessEquivalencia.java")])
     sys.path.insert(0, str(ROOT / "src"))
@@ -114,7 +119,8 @@ def rodar(destino: Path, sublotes=("ascii", "acentos"), classes: Path | None = N
                     dependencias={p: version(p) for p in ("pandas", "jellyfish", "Unidecode", "pytest")},
                     versao_javac=executar([str(javac), "-version"]),
                     versao_java=executar([str(java), "-version"]), avisos_compilacao=avisos,
-                    sha_fontes={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in fontes},
+                     sha_fontes={str(p.relative_to(ROOT) if p.is_relative_to(ROOT) else p):
+                                 hashlib.sha256(p.read_bytes()).hexdigest() for p in fontes},
                     sha_entradas={p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(destino.glob("*_utf8.csv"))},
                     sha_frequencias={p: hashlib.sha256((destino / "frequencias" / p).read_bytes()).hexdigest() for p in FREQUENCIAS})
     (destino / "resultados.json").write_text(json.dumps(dict(metadata=metadata, resultados=resultados), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -171,7 +177,7 @@ def relatar(resultados, metadata, destino: Path, artefatos: Path):
              "Comparamos os subescores serializados nos CSVs e a nota final serializada, nao valores internos arredondados artificialmente. "
              "Cada linha e conferida por pair_id; cardinalidade e conjunto de identificadores devem coincidir.", "",
              "Reproduzir na raiz: `python tests/equivalencia/comparar.py`. "
-             "O padrao usa `%TEMP%/cdr_java`, compila todas as fontes legado/src/principal/*.java com JDK 21 e "
+              "O padrao usa `%TEMP%/cdr_java`, compila as fontes de CDR_LEGADO_DIR (padrao legado/src/principal) com JDK 21 e "
              "`-encoding ISO-8859-1 -d .../classes`, depois compila junto o harness. "
              "Executa uma JVM nova por sublote, com cwd na pasta das seis tabelas, evitando interferencia de estado estatico "
              "(ComparaRegistros.java:16-18). O harness recebe entrada, pasta das frequencias e prefixo de saida. "
@@ -218,7 +224,8 @@ def relatar(resultados, metadata, destino: Path, artefatos: Path):
               "## Regressao e limites", "",
               "baseline_ascii.json congela as contagens iniciais, sem recalculo automatico nos testes. "
               "O teste exige no minimo essa concordancia por subescore, inclusive nota final, com tolerancia 1e-9. "
-              "Skip somente se JDK 21+ nao for encontrado. Aumentar a concordancia e permitido; reduzi-la exige investigacao. "
+              "Skip se os fontes locais do prototipo Java ou JDK 21+ nao forem encontrados. Falhas de compilacao continuam sendo erros. "
+              "Aumentar a concordancia e permitido; reduzi-la exige investigacao. "
               "Os resultados sao condicionados ao lote e as tabelas sinteticas, nao a distribuicao de nomes de uma populacao. "
               "Nenhuma correcao ou refatoracao dos comparadores foi feita; causas individuais nao foram isoladas por ablation.", ""]
     (destino / "relatorio_equivalencia.md").write_text("\n".join(texto), encoding="utf-8")
