@@ -11,7 +11,7 @@ on:
 
 jobs:
   prepare-version:
-    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -66,7 +66,7 @@ jobs:
           fail_ci_if_error: true
 
   build:
-    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - prepare-version
       - tests
@@ -136,7 +136,7 @@ jobs:
       - prepare-version
       - build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
       APP_VERSION: ${{ needs.prepare-version.outputs.version }}
       APP_VERSION_DATE: ${{ needs.prepare-version.outputs.date }}
