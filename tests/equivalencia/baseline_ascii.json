@@ -1,0 +1,27 @@
+{
+  "seed": 20150901,
+  "n": 250,
+  "tolerancia": 1e-09,
+  "identicos": {
+    "paciente_primeiro": 229,
+    "paciente_ultimo": 233,
+    "paciente_iguais": 212,
+    "paciente_raros": 142,
+    "paciente_comuns": 98,
+    "paciente_soundex": 222,
+    "paciente_abreviacoes": 248,
+    "mae_primeiro": 232,
+    "mae_ultimo": 233,
+    "mae_iguais": 216,
+    "mae_raros": 120,
+    "mae_comuns": 177,
+    "mae_soundex": 224,
+    "mae_abreviacoes": 248,
+    "data_igual": 250,
+    "data_um_digito": 250,
+    "data_inverte_dia": 206,
+    "data_inverte_mes": 192,
+    "data_inverte_ano": 189,
+    "nota_final": 28
+  }
+}
