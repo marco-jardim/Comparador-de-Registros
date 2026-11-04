@@ -109,6 +109,16 @@ A suíte de testes usa **pytest** e cobre cenários de unidade, integração e f
 
 Os testes são executados automaticamente no GitHub Actions antes de cada build e o relatório de cobertura é enviado ao Codecov. É altamente recomendado rodá-los localmente antes de abrir um Pull Request ou gerar executáveis.
 
+### Equivalência com o protótipo Java
+
+O protótipo Java não está publicado neste repositório. O teste de equivalência só roda com a cópia local do autor e JDK 21 ou superior, sendo pulado na CI com o motivo informado pelo pytest. Por padrão, os fontes são procurados em `legado/src/principal`; a variável de ambiente opcional `CDR_LEGADO_DIR` permite indicar outro diretório de fontes `*.java` (caminho absoluto ou relativo à raiz do repositório). Quando os fontes estão presentes, erros de compilação fazem o teste falhar, não são motivo para pulá-lo.
+
+Para executar a equivalência localmente e exibir o motivo de eventuais skips:
+
+```bash
+python -m pytest tests/equivalencia/test_equivalencia.py -v -rs
+```
+
 ---
 
 ## 4. Executar a aplicação (GUI)
@@ -182,8 +192,8 @@ O diretório será reconstruído automaticamente em uma nova execução.
 
 ## 8. Pipeline e build de executáveis
 
-- O workflow `build-release.yml` roda em todo push para `main` e quando PRs são mesclados.
-- As etapas seguem a ordem **prepare-version ➜ tests ➜ build ➜ release**: o build só começa se toda a suíte `pytest` passar.
+- O workflow `build-release.yml` roda em todo push para `main` e em PRs abertos, atualizados, reabertos ou fechados contra `main`.
+- Os testes rodam independentemente da preparação de versão. Preparação de versão, build e release só rodam em push para `main` ou PR fechado e mesclado; o build depende da versão e da aprovação dos testes, e a release depende do build.
 - Executáveis são empacotados com **PyInstaller** para Windows, macOS e Linux e publicados como artefatos.
 
 Para gerar manualmente um executável local (exemplo em Windows, com venv ativo):

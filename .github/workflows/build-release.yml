@@ -7,10 +7,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    types: [closed]
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
   prepare-version:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -38,7 +39,6 @@ jobs:
           echo "date=$today" >> "$GITHUB_OUTPUT"
 
   tests:
-    needs: prepare-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,7 +55,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests
-        run: pytest --cov=src --cov-report=xml --cov-report=term-missing
+        run: pytest -rs --cov=src --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -66,6 +66,7 @@ jobs:
           fail_ci_if_error: true
 
   build:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     needs:
       - prepare-version
       - tests
