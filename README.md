@@ -5,7 +5,7 @@
 ![Python versions](https://img.shields.io/badge/Python-3.11%20%E2%86%923.13-blue?logo=python)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-**Comparador de Registros** é uma ferramenta Python focada em deduplicação e vinculação probabilística de bases cadastrais – especialmente em contextos de saúde pública, assistência social e cadastros massivos – onde inconsistências de grafia, abreviações e datas trocadas comprometem a análise de dados.
+**Comparador de Registros** é uma ferramenta Python focada em deduplicação e vinculação probabilística de bases cadastrais, especialmente em contextos de saúde pública, assistência social e cadastros massivos, onde inconsistências de grafia, abreviações e datas trocadas comprometem a análise de dados.
 
 <p align="center">
 	<a href="app.png"><img src="app.png" alt="App screenshot"></a>
@@ -33,14 +33,15 @@
 > ├─ freqBuilder.py          # Construção e cache de tabelas de frequência
 > ├─ util.py                 # Normalização, Soundex e distâncias
 > ├─ comparators/            # Comparadores especializados
-> ├─ transformabase.py       # Conversão de bases legadas
+> ├─ transformaBase.py       # Conversão de bases legadas
 > └─ ...
 > tests/
 > ├─ unit/                   # Testes de unidade
 > ├─ functional/             # Fluxos completos usando CSVs reais
 > └─ integration/            # Testes entre módulos principais
 > .github/workflows/         # Pipeline CI (testes + build + release)
-> requirements.txt           # Dependências pinadas (pip freeze)
+> pyproject.toml             # Metadados, módulos e dependências de instalação
+> requirements.txt           # Dependências de execução e testes, com faixas de versão
 > README.md                  # Este guia
 > LICENSE                    # GPL-3.0
 > ```
@@ -84,16 +85,16 @@ source .venv/bin/activate
 
 Finalize com `deactivate` quando quiser sair do ambiente virtual.
 
-### 2.3 Instalar dependências
+### 2.3 Instalar o projeto
 
 ```bash
-(.venv) pip install --upgrade pip
-(.venv) pip install -r requirements.txt
+python -m pip install --upgrade pip
+pip install -e .
 ```
 
-> ℹ️ O arquivo `requirements.txt` lista apenas as dependências realmente usadas pelo projeto (pandas, RapidFuzz, python-Levenshtein, Jellyfish, Unidecode e pytest). Outras bibliotecas de suporte são dependências transitivas instaladas automaticamente pelo `pip`.
+O `pyproject.toml` instala pandas, RapidFuzz, python-Levenshtein, Jellyfish e Unidecode nas mesmas faixas de versão do `requirements.txt`. Para instalar também pytest e pytest-cov, use `python -m pip install -e ".[test]"`. O `requirements.txt` continua disponível para o fluxo de CI existente.
 
-Caso esteja em um ambiente com restrições e deseje o mínimo essencial, instale manualmente `pandas`, `RapidFuzz`, `python-Levenshtein`, `Unidecode` e `jellyfish`. O código faz fallback para implementações Python puras quando esses aceleradores não estiverem disponíveis, porém com processamento mais lento.
+A instalação preserva os nomes existentes: `comparaRegistros`, `freqBuilder`, `gui`, `transformaBase`, `util` e o pacote `comparators`. Não é necessário acrescentar `src/` ao `PYTHONPATH`. Tkinter é fornecido pela distribuição do Python ou pelo sistema operacional, não pelo pip.
 
 ---
 
@@ -154,15 +155,22 @@ A caixa **Núcleos** define quantos processadores serão utilizados para paralel
 
 ---
 
-## 5. Linha de comando (CLI)
+## 5. Uso como biblioteca
 
-Para executar sem interface gráfica:
+O projeto não oferece uma CLI de processamento. Para automatizar comparações, use as funções Python existentes após a instalação:
 
-```bash
-(.venv) python -m src.comparaRegistros path/entrada.csv saida --idx 9 10 11 13 14 15
+```python
+from comparators import comparar_data
+from comparaRegistros import processar
+
+resultado = comparar_data("19900101", "19900101")
+print(resultado.nota)
+
+# Índices iniciados em zero: Nome1, Mãe1, Data1, Nome2, Mãe2, Data2.
+processar("entrada.csv", "saida", (9, 10, 11, 13, 14, 15), sep="|")
 ```
 
-O parâmetro `--idx` recebe os seis índices (0-based) referentes aos campos Nome1, Mãe1, Data1, Nome2, Mãe2, Data2. Consulte `python -m src.comparaRegistros --help` para ver todas as opções disponíveis.
+`processar` grava `saida.csv`. A GUI continua sendo iniciada por `python src/gui.py` no repositório; a instalação não cria novos comandos executáveis.
 
 ---
 
@@ -227,3 +235,13 @@ Contribuições pequenas (refactors, documentação, traduções) também são m
 ## 10. Licença
 
 Distribuído sob a **GNU General Public License v3.0**. Consulte o arquivo [`LICENSE`](LICENSE) para detalhes completos.
+
+## 11. Autoria, versão da tese e equivalência com Java
+
+O protótipo Java foi desenvolvido por **Daniele B. Peçanha**, em 2015, no IESC-UFRJ, conforme [`legado/src/principal/LEIAME`](legado/src/principal/LEIAME). O algoritmo tem como referência a dissertação de **Francisca de Fátima de Araújo Lucena (2013)**, *Uso de algoritmos computacionais para a classificação de pares de registros provenientes do relacionamento probabilístico de bancos de dados: uma aplicação em saúde pública*.
+
+A tag anotada **`v0.1.0-tese`** aponta para **`3b43598`**, HEAD de `main` em 29/09/2025. O extrato usado na tese é compatível com a faixa **`1b9236b..3b43598`**, mas o commit gerador exato não foi confirmado pela equipe. A tag registra essa referência histórica, não uma confirmação de proveniência exata. A versão de empacotamento `0.1.0` não significa que as alterações posteriores de empacotamento já existissem naquele commit.
+
+O [PR #25](https://github.com/marco-jardim/Comparador-de-Registros/pull/25) acrescentou a comparação entre Python e o protótipo Java em lote sintético de nomes e datas. O [relatório de equivalência](tests/equivalencia/relatorio_equivalencia.md) documenta concordâncias, divergências e limites: a equivalência é parcial, não uma identidade entre as implementações. Os testes em `tests/equivalencia/` exigem JDK 21 ou superior para executar a comparação com Java.
+
+A CI existente gera versões de executáveis a partir de tags `v*` no formato numérico `v0.N`. A tag histórica `v0.1.0-tese` não segue esse formato; o workflow de release precisa ser revisto antes de uma próxima execução de release. Esta alteração não modifica o workflow nem publica pacotes no PyPI.
